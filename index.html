@@ -1,0 +1,670 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>EEG Trase Simülatörü</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: an instrument panel on top (controls + live sweeping trace like a real EEG machine), then the head map and the explanation in two columns that stack on phones. */
+:root {
+  --paper: #f4f7f6;
+  --surface: #ffffff;
+  --grid: #dfe8e5;
+  --grid-strong: #b7cac4;
+  --ink: #1c2a31;
+  --muted: #5b6d71;
+  --line: #d3dedb;
+  --accent: #0d6c86;
+  --accent-soft: #dcedf2;
+  --left: #1f5fbf;
+  --right: #b8322a;
+  --mark: #b45309;
+  --font-display: "Bricolage Grotesque", "Figtree", system-ui, sans-serif;
+  --font-body: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0d1416; --surface: #131d20; --grid: #172428; --grid-strong: #293e44;
+    --ink: #d3e5e1; --muted: #8ba2a4; --line: #23353a; --accent: #4cb6d4; --accent-soft: #15323b;
+    --left: #6ea2f0; --right: #f07a6e; --mark: #f2a25c; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0d1416; --surface: #131d20; --grid: #172428; --grid-strong: #293e44;
+  --ink: #d3e5e1; --muted: #8ba2a4; --line: #23353a; --accent: #4cb6d4; --accent-soft: #15323b;
+  --left: #6ea2f0; --right: #f07a6e; --mark: #f2a25c; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--paper); color: var(--ink);
+  font-family: var(--font-body); font-size: 15px; line-height: 1.55;
+}
+.wrap {
+  max-width: 1180px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 48px;
+  display: grid; gap: 28px;
+}
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.15; }
+h1 { font-size: clamp(28px, 4vw, 40px); font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 22px; font-weight: 700; }
+h3 { font-size: 16px; font-weight: 700; }
+p { margin: 0; }
+.lede { max-width: 68ch; color: var(--muted); margin-top: 8px; }
+.eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+
+/* Instrument */
+.instrument { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.controls { display: flex; flex-wrap: wrap; gap: 16px 28px; padding: 16px; border-bottom: 1px solid var(--line); }
+.group { display: grid; gap: 6px; min-width: 0; }
+.group > .label { font-family: var(--font-mono); font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+.row { display: flex; flex-wrap: wrap; gap: 6px; }
+.seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.seg button { border: 0; border-right: 1px solid var(--line); border-radius: 0; }
+.seg button:last-child { border-right: 0; }
+button, select {
+  font: 500 13px/1 var(--font-body); color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line); border-radius: 7px; padding: 8px 11px; cursor: pointer;
+}
+button:hover { background: var(--accent-soft); }
+button[aria-pressed="true"] { background: var(--accent); color: var(--surface); }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+select { padding: 7px 8px; }
+.settings { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+.settings label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.check { display: flex !important; align-items: center; gap: 6px; padding-bottom: 7px; color: var(--ink) !important; font-size: 13px !important; }
+.check input { accent-color: var(--accent); width: 16px; height: 16px; }
+.screen { position: relative; }
+canvas { display: block; width: 100%; }
+.status { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--line);
+  font-family: var(--font-mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.status b { color: var(--ink); font-weight: 500; }
+
+/* Below */
+.cols { display: grid; grid-template-columns: minmax(0, 330px) minmax(0, 1fr); gap: 28px; align-items: start; }
+@media (max-width: 820px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: grid; gap: 12px; }
+.head svg { width: 100%; max-width: 300px; justify-self: center; }
+.legend { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.legend span::before { content: ""; display: inline-block; width: 14px; height: 3px; border-radius: 2px; margin-right: 8px; vertical-align: middle; background: currentColor; }
+.lg-l { color: var(--left); } .lg-r { color: var(--right); } .lg-z { color: var(--ink); }
+.legend span { color: var(--muted); }
+.legend span.lg-l::before { background: var(--left); } .legend span.lg-r::before { background: var(--right); } .legend span.lg-z::before { background: var(--ink); }
+
+.explain { display: grid; gap: 26px; min-width: 0; }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; counter-reset: s; }
+.steps li { display: grid; grid-template-columns: 30px minmax(0,1fr); gap: 10px; max-width: 72ch; }
+.steps li::before { counter-increment: s; content: counter(s); font-family: var(--font-mono); font-size: 13px; color: var(--accent);
+  border: 1px solid var(--accent); border-radius: 50%; width: 26px; height: 26px; display: grid; place-items: center; }
+.steps b { font-weight: 600; }
+.tbl { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 520px; font-size: 14px; }
+th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--font-mono); font-weight: 500; font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+tr:last-child td { border-bottom: 0; }
+td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.art { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.art div { border-top: 2px solid var(--mark); padding-top: 8px; display: grid; gap: 4px; }
+.art p, .note { font-size: 14px; color: var(--muted); }
+.note { max-width: 72ch; }
+kbd { font-family: var(--font-mono); font-size: 12px; background: var(--paper); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; }
+.flash { animation: flash 1.6s ease-out; }
+@keyframes flash { 0%, 40% { fill: var(--mark); r: .085; } 100% { r: .055; } }
+@media (prefers-reduced-motion: reduce) { .flash { animation: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Elektronörofizyoloji · Çalışma aracı</div>
+    <h1>EEG trase simülatörü</h1>
+    <p class="lede">Ekrandaki çizgiler 10-20 sistemine göre yerleştirilmiş 19 elektrottan, bipolar boyuna montajla ("double banana") üretiliyor. Durumu değiştir, artefakt ekle, filtrelerle oyna; trasenin nasıl değiştiğini gerçek bir cihazdaki gibi izle. Veriler simülasyondur, gerçek hasta kaydı değildir.</p>
+  </header>
+
+  <section class="instrument" aria-label="EEG kayıt ekranı">
+    <div class="controls">
+      <div class="group">
+        <span class="label">Hastanın durumu</span>
+        <div class="seg" id="states" role="group" aria-label="Hastanın durumu">
+          <button data-state="closed" aria-pressed="true">Gözler kapalı</button>
+          <button data-state="open" aria-pressed="false">Gözler açık</button>
+          <button data-state="drowsy" aria-pressed="false">Uykulu (N1)</button>
+          <button data-state="n2" aria-pressed="false">Uyku N2</button>
+          <button data-state="n3" aria-pressed="false">Derin uyku N3</button>
+        </div>
+      </div>
+      <div class="group">
+        <span class="label">Artefakt</span>
+        <div class="row">
+          <button id="bBlink">Göz kırpma</button>
+          <button id="bPop">Elektrot atması</button>
+          <button id="tEmg" aria-pressed="false">Kas (EMG)</button>
+          <button id="tLine" aria-pressed="false">50 Hz şebeke</button>
+          <button id="tEcg" aria-pressed="false">EKG</button>
+        </div>
+      </div>
+      <div class="group">
+        <span class="label">Cihaz ayarları</span>
+        <div class="settings">
+          <label for="sens">Hassasiyet
+            <select id="sens"><option value="5">5 µV/mm</option><option value="7" selected>7 µV/mm</option><option value="10">10 µV/mm</option><option value="15">15 µV/mm</option><option value="20">20 µV/mm</option></select>
+          </label>
+          <label for="speed">Kağıt hızı
+            <select id="speed"><option value="15">15 mm/s</option><option value="30" selected>30 mm/s</option><option value="60">60 mm/s</option></select>
+          </label>
+          <label for="lff">LFF (alçak frekans)
+            <select id="lff"><option value="0.5">0,5 Hz</option><option value="1" selected>1 Hz</option><option value="5">5 Hz</option></select>
+          </label>
+          <label for="hff">HFF (yüksek frekans)
+            <select id="hff"><option value="15">15 Hz</option><option value="35">35 Hz</option><option value="70" selected>70 Hz</option></select>
+          </label>
+          <label class="check" for="notch"><input type="checkbox" id="notch"> Notch 50 Hz</label>
+          <button id="bPause" aria-pressed="false">Durdur</button>
+        </div>
+      </div>
+    </div>
+    <div class="screen" id="screen"><canvas id="cv" aria-label="Kayan EEG trasesi, 18 kanal"></canvas></div>
+    <div class="status" id="status"></div>
+  </section>
+
+  <div class="cols">
+    <aside class="card head">
+      <h3>Elektrot yerleşimi (10-20)</h3>
+      <svg id="head" viewBox="-1.25 -1.25 2.5 2.5" role="img" aria-label="10-20 sistemine göre kafa üzerinde elektrot yerleri, yukarısı burun"></svg>
+      <div class="legend">
+        <span class="lg-l">Sol zincirler (tek numara: Fp1, F3, T3…)</span>
+        <span class="lg-r">Sağ zincirler (çift numara: Fp2, F4, T4…)</span>
+        <span class="lg-z">Orta hat (z: Fz, Cz, Pz)</span>
+      </div>
+      <p class="note">Her kanal iki komşu elektrot arasındaki voltaj farkıdır. Örneğin <kbd>Fp1-F7</kbd>, Fp1 eksi F7. Harfler bölgeyi gösterir: Fp ön alın, F frontal, C santral, T temporal, P parietal, O oksipital.</p>
+    </aside>
+
+    <div class="explain">
+      <section style="display:grid;gap:14px">
+        <h2>Bu çizgiler nasıl oluşuyor?</h2>
+        <ol class="steps">
+          <li><p><b>Nöronlar.</b> Korteksteki piramidal hücrelerin dendritlerinde oluşan postsinaptik potansiyeller (aksiyon potansiyelleri değil) toplanır. Bu hücreler yüzeye dik ve paralel dizildiği için binlerce tanesi aynı anda aktive olunca ölçülebilir bir elektrik alanı çıkar.</p></li>
+          <li><p><b>Kafatası ve deri.</b> Sinyal beyin zarlarından, kemikten ve deriden geçerken çok zayıflar. Kafa derisine ulaşan voltaj yalnızca 10–100 mikrovolt (µV) civarındadır.</p></li>
+          <li><p><b>Elektrotlar.</b> Elektrotlar kafa ölçülerek 10-20 sistemine göre konur: nasion-inion ve kulak arası mesafelerin %10 ve %20'lik aralıklarına.</p></li>
+          <li><p><b>Diferansiyel amplifikatör.</b> Cihaz iki elektrot arasındaki farkı yaklaşık bir milyon kat yükseltir. İki elektrotta ortak olan gürültü (ortam elektriği gibi) birbirini götürür.</p></li>
+          <li><p><b>Filtreler.</b> LFF yavaş kaymaları (terleme, nefes) keser, HFF kas gibi hızlı sinyalleri keser, notch filtre şebeke elektriğinin 50 Hz'ini siler.</p></li>
+          <li><p><b>Ekran veya kağıt.</b> Standart kayıt 30 mm/s hızında ve 7 µV/mm hassasiyetinde yapılır. EEG'de kural olarak <b>negatif yukarı</b> çizilir: elektrot negatifleşirse çizgi yukarı, pozitifleşirse aşağı gider.</p></li>
+        </ol>
+      </section>
+
+      <section style="display:grid;gap:12px">
+        <h2>Ritimler</h2>
+        <div class="tbl">
+          <table>
+            <thead><tr><th>Ritim</th><th>Frekans</th><th>Ne zaman görülür</th><th>Simülatörde dene</th></tr></thead>
+            <tbody>
+              <tr><td>Delta</td><td class="num">0,5–4 Hz</td><td>Derin uyku; uyanık erişkinde görülürse patolojik olabilir</td><td>Derin uyku N3</td></tr>
+              <tr><td>Teta</td><td class="num">4–7 Hz</td><td>Uykuya dalarken, çocuklarda</td><td>Uykulu (N1)</td></tr>
+              <tr><td>Alfa</td><td class="num">8–13 Hz</td><td>Uyanık, gözler kapalı, arka (oksipital) bölgede. Göz açınca baskılanır (Berger reaksiyonu)</td><td>Gözler kapalı → açık</td></tr>
+              <tr><td>Beta</td><td class="num">&gt;13 Hz</td><td>Uyanık, dikkatli; ön bölgede, düşük voltajlı</td><td>Gözler açık</td></tr>
+              <tr><td>Uyku iğcikleri</td><td class="num">11–15 Hz</td><td>N2 uykusunda, santral bölgede 0,5–2 sn süren patlamalar</td><td>Uyku N2</td></tr>
+              <tr><td>K-kompleksi</td><td class="num">tek dalga</td><td>N2 uykusunda büyük, iki fazlı yavaş dalga</td><td>Uyku N2</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section style="display:grid;gap:12px">
+        <h2>Artefaktlar: beyinden gelmeyen çizgiler</h2>
+        <div class="art">
+          <div><h3>Göz kırpma</h3><p>Kornea pozitif yüklüdür. Göz kapağı kapanınca göz yukarı döner ve Fp elektrotları pozitifleşir, Fp kanallarında büyük, aşağı doğru dalga çıkar.</p></div>
+          <div><h3>Kas (EMG)</h3><p>Çene sıkma, gerginlik. Temporal ve frontal kanallarda hızlı, sivri, sık dalgalar. HFF'yi 15 Hz yapınca azalır ama gerçek beyin aktivitesi de bozulur.</p></div>
+          <div><h3>50 Hz şebeke</h3><p>Türkiye'de şebeke 50 Hz'dir. Bir elektrodun empedansı yüksekse o elektroddan geçen kanallar kalın, bulanık bir banda döner. Notch açınca kaybolur.</p></div>
+          <div><h3>Elektrot atması (pop)</h3><p>Gevşek elektrot ani bir sıçrama yapar. Sadece o elektrodu paylaşan iki kanalda, birbirine ters yönde görülür. Bu ters yönlenmeye <b>faz dönüşü</b> denir.</p></div>
+          <div><h3>EKG</h3><p>Kalbin elektriği, özellikle kısa boyunlu veya kilolu hastalarda, nabızla eş zamanlı küçük sivri dalgalar olarak görülür.</p></div>
+        </div>
+      </section>
+
+      <p class="note">Not: Burada eski adlandırma (T3, T4, T5, T6) kullanıldı. Yeni ACNS adlandırmasında bunlar T7, T8, P7, P8 olarak geçer.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const FS = 256;
+  const BUF_SEC = 40;
+  const BUF = FS * BUF_SEC;
+
+  // ---------- DSP helpers ----------
+  function randn() {
+    let u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+  class Biquad {
+    constructor(type, f, Q = Math.SQRT1_2) { this.x1 = this.x2 = this.y1 = this.y2 = 0; this.set(type, f, Q); }
+    set(type, f, Q) {
+      const w = 2 * Math.PI * f / FS, c = Math.cos(w), s = Math.sin(w), a = s / (2 * Q);
+      let b0, b1, b2;
+      if (type === 'lp') { b0 = (1 - c) / 2; b1 = 1 - c; b2 = (1 - c) / 2; }
+      else if (type === 'hp') { b0 = (1 + c) / 2; b1 = -(1 + c); b2 = (1 + c) / 2; }
+      else if (type === 'bp') { b0 = a; b1 = 0; b2 = -a; }
+      else { b0 = 1; b1 = -2 * c; b2 = 1; } // notch
+      const a0 = 1 + a;
+      this.b0 = b0 / a0; this.b1 = b1 / a0; this.b2 = b2 / a0;
+      this.a1 = -2 * c / a0; this.a2 = (1 - a) / a0;
+    }
+    step(x) {
+      const y = this.b0 * x + this.b1 * this.x1 + this.b2 * this.x2 - this.a1 * this.y1 - this.a2 * this.y2;
+      this.x2 = this.x1; this.x1 = x; this.y2 = this.y1; this.y1 = y;
+      return y;
+    }
+  }
+  // Band-limited noise with unit RMS: the raw material for each rhythm.
+  class Band {
+    constructor(f, Q) {
+      this.f1 = new Biquad('bp', f, Q); this.f2 = new Biquad('bp', f, Q); this.k = 1;
+      let s = 0;
+      for (let i = 0; i < 6000; i++) { const v = this.raw(); if (i >= 1000) s += v * v; }
+      this.k = 1 / Math.sqrt(s / 5000);
+    }
+    raw() { return this.f2.step(this.f1.step(randn())); }
+    next() { return this.raw() * this.k; }
+  }
+
+  // ---------- Electrodes (10-20, nose up, x: left→right, y: front→back) ----------
+  const EL = {
+    Fp1: [-0.3, -0.86], Fp2: [0.3, -0.86],
+    F7: [-0.72, -0.52], F3: [-0.38, -0.46], Fz: [0, -0.43], F4: [0.38, -0.46], F8: [0.72, -0.52],
+    T3: [-0.9, 0], C3: [-0.45, 0], Cz: [0, 0], C4: [0.45, 0], T4: [0.9, 0],
+    T5: [-0.72, 0.52], P3: [-0.38, 0.46], Pz: [0, 0.43], P4: [0.38, 0.46], T6: [0.72, 0.52],
+    O1: [-0.3, 0.86], O2: [0.3, 0.86]
+  };
+  const NAMES = Object.keys(EL);
+  const IDX = Object.fromEntries(NAMES.map((n, i) => [n, i]));
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const G = NAMES.map(n => {
+    const [x, y] = EL[n];
+    const post = Math.pow(clamp((y + 0.45) / 1.31, 0, 1), 1.6);
+    const front = clamp((0.2 - y) / 1.06, 0, 1);
+    const cent = Math.exp(-(y * y) / 0.06) * (1 - 0.35 * Math.abs(x));
+    const temp = Math.abs(x) > 0.6 ? 1 : (y < -0.7 ? 0.6 : 0.1);
+    const blink = n.startsWith('Fp') ? 1 : (y < -0.4 ? 0.22 : 0.02);
+    return {
+      x, y,
+      side: x < -0.1 ? 0 : x > 0.1 ? 1 : 2,
+      alpha: post,
+      beta: 0.35 + 0.65 * front,
+      theta: 0.6 + 0.4 * cent,
+      delta: 0.55 + 0.45 * front,
+      spindle: cent,
+      kc: 0.5 * front + 0.5 * cent,
+      temp, blink,
+      ecg: 0.6 * y + 0.5 * x,
+      line: n === 'T4' ? 45 : (n === 'F8' || n === 'T6' || n === 'C4') ? 3 : 1.2,
+    };
+  });
+
+  const CHAINS = [
+    { side: 0, list: ['Fp1', 'F7', 'T3', 'T5', 'O1'] },
+    { side: 1, list: ['Fp2', 'F8', 'T4', 'T6', 'O2'] },
+    { side: 0, list: ['Fp1', 'F3', 'C3', 'P3', 'O1'] },
+    { side: 1, list: ['Fp2', 'F4', 'C4', 'P4', 'O2'] },
+    { side: 2, list: ['Fz', 'Cz', 'Pz'] },
+  ];
+  const CH = [];
+  CHAINS.forEach((c, ci) => {
+    for (let i = 0; i < c.list.length - 1; i++) {
+      CH.push({ a: IDX[c.list[i]], b: IDX[c.list[i + 1]], label: c.list[i] + '-' + c.list[i + 1], side: c.side, chain: ci });
+    }
+  });
+
+  // ---------- Sources ----------
+  const RH = { alpha: [10, 4], beta: [20, 1.5], theta: [6, 2], delta: [1.2, 1] };
+  const shared = {};
+  for (const r in RH) shared[r] = [new Band(...RH[r]), new Band(...RH[r])];
+  const local = NAMES.map(() => {
+    const o = {}; for (const r in RH) o[r] = new Band(...RH[r]); return o;
+  });
+  const drift = NAMES.map(() => ({ v: 0 }));
+  const emgF = NAMES.map(() => new Biquad('hp', 25));
+
+  const STATES = {
+    closed: { alpha: 45, beta: 6, theta: 6, delta: 5, label: 'Uyanık, gözler kapalı' },
+    open: { alpha: 7, beta: 8, theta: 5, delta: 5, blinks: true, label: 'Uyanık, gözler açık' },
+    drowsy: { alpha: 10, beta: 4, theta: 24, delta: 8, label: 'Uykulu (N1)' },
+    n2: { alpha: 3, beta: 3, theta: 18, delta: 18, spindles: true, label: 'Uyku evre N2' },
+    n3: { alpha: 0, beta: 2, theta: 12, delta: 75, label: 'Derin uyku N3' },
+  };
+  const ANN = { closed: 'Gözler kapandı', open: 'Gözler açıldı', drowsy: 'Uykulu', n2: 'N2', n3: 'N3' };
+
+  const S = {
+    state: 'closed', amp: { alpha: 45, beta: 6, theta: 6, delta: 5 },
+    emg: false, line: false, ecg: false,
+    sens: 7, speed: 30, lff: 1, hff: 70, notch: false, paused: false,
+  };
+  let t = 0, wTot = 0;
+  let events = [];
+  let nextAuto = 2, nextSleepEv = 3, nextBeat = 0.4;
+  let emgEnv = 0.8;
+  const annots = [];
+
+  // ---------- Per-channel filters and ring buffers ----------
+  let filt = [];
+  function buildFilters() {
+    filt = CH.map(() => ({
+      hp: new Biquad('hp', S.lff), lp1: new Biquad('lp', S.hff), lp2: new Biquad('lp', S.hff),
+      notch: new Biquad('notch', 50, 5),
+    }));
+  }
+  buildFilters();
+  const buf = CH.map(() => new Float32Array(BUF));
+
+  function eventVal(ev, tau, e) {
+    const g = G[e];
+    switch (ev.type) {
+      case 'blink': {
+        const w = tau < 0.18 ? 0.06 : 0.11;
+        return ev.amp * g.blink * Math.exp(-Math.pow((tau - 0.18) / w, 2));
+      }
+      case 'spindle':
+        return 28 * g.spindle * Math.sin(2 * Math.PI * 13 * tau) * Math.exp(-Math.pow((tau - 0.6) / 0.25, 2));
+      case 'kc':
+        return 110 * g.kc * (-Math.exp(-Math.pow((tau - 0.18) / 0.07, 2)) + 0.55 * Math.exp(-Math.pow((tau - 0.45) / 0.14, 2)));
+      case 'pop':
+        return e === ev.el ? 220 * (1 - Math.exp(-tau / 0.006)) * Math.exp(-tau / 0.35) : 0;
+    }
+    return 0;
+  }
+  const EVDUR = { blink: 0.6, spindle: 1.2, kc: 1.0, pop: 1.8 };
+
+  function ecgShape(tau) {
+    return Math.exp(-Math.pow((tau - 0.05) / 0.012, 2)) - 0.25 * Math.exp(-Math.pow((tau - 0.072) / 0.014, 2)) + 0.15 * Math.exp(-Math.pow((tau - 0.3) / 0.06, 2));
+  }
+  let beatT0 = -10;
+
+  const ev = new Float64Array(NAMES.length);
+  function sampleOnce() {
+    const dt = 1 / FS;
+    t += dt;
+    const target = STATES[S.state];
+    const k = 1 - Math.exp(-dt / 0.35);
+    for (const r in S.amp) S.amp[r] += (target[r] - S.amp[r]) * k;
+
+    // scheduled physiology
+    if (target.blinks && t > nextAuto) { addEvent('blink', { amp: 120 + Math.random() * 60 }, 'kırpma'); nextAuto = t + 2.5 + Math.random() * 3.5; }
+    if (target.spindles && t > nextSleepEv) {
+      if (Math.random() < 0.65) addEvent('spindle', {}, 'iğcik'); else addEvent('kc', {}, 'K-kompleksi');
+      nextSleepEv = t + 3 + Math.random() * 4;
+    }
+    if (S.ecg && t > nextBeat) { beatT0 = t; nextBeat = t + 0.8 + (Math.random() - 0.5) * 0.06; }
+    emgEnv += ((0.4 + Math.random() * 1.2) - emgEnv) * 0.002;
+
+    const sh = {};
+    for (const r in RH) sh[r] = [shared[r][0].next(), shared[r][1].next()];
+    const alphaEnv = 0.7 + 0.3 * Math.sin(2 * Math.PI * 0.17 * t) * Math.sin(2 * Math.PI * 0.05 * t + 1);
+    const line = Math.sin(2 * Math.PI * 50 * t);
+    const ecg = ecgShape(t - beatT0);
+
+    for (let e = 0; e < NAMES.length; e++) {
+      const g = G[e], L = local[e];
+      let v = 0;
+      for (const r in RH) {
+        const s = g.side === 2 ? 0.5 * (sh[r][0] + sh[r][1]) : sh[r][g.side];
+        let a = S.amp[r] * g[r] * (0.75 * s + 0.45 * L[r].next());
+        if (r === 'alpha') a *= alphaEnv;
+        v += a;
+      }
+      const d = drift[e]; d.v = 0.995 * d.v + randn() * 1.2; v += d.v;
+      v += randn() * 1.5;
+      if (S.emg) v += 22 * g.temp * emgEnv * emgF[e].step(randn());
+      if (S.line) v += g.line * line;
+      if (S.ecg) v += 40 * g.ecg * ecg;
+      for (const E of events) { const tau = t - E.t0; if (tau >= 0 && tau < EVDUR[E.type]) v += eventVal(E, tau, e); }
+      ev[e] = v;
+    }
+    if (events.length) events = events.filter(E => t - E.t0 < EVDUR[E.type]);
+
+    const w = wTot % BUF;
+    for (let c = 0; c < CH.length; c++) {
+      const f = filt[c];
+      let y = ev[CH[c].a] - ev[CH[c].b];
+      y = f.hp.step(y);
+      y = f.lp2.step(f.lp1.step(y));
+      if (S.notch) y = f.notch.step(y);
+      buf[c][w] = y;
+    }
+    wTot++;
+  }
+
+  function addEvent(type, extra = {}, text) {
+    events.push({ type, t0: t, ...extra });
+    if (text) annot(text);
+  }
+  function annot(text) { annots.push({ w: wTot, text }); if (annots.length > 80) annots.shift(); }
+
+  // ---------- Drawing ----------
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+  const statusEl = document.getElementById('status');
+  let W = 0, H = 0, dpr = 1, labelW = 72, chH = 30, topPad = 22, botPad = 30, plotW = 0, basePage = 10;
+  let col = {};
+  function readColors() {
+    const cs = getComputedStyle(document.documentElement);
+    for (const k of ['paper', 'surface', 'grid', 'grid-strong', 'ink', 'muted', 'accent', 'left', 'right', 'mark', 'font-mono']) col[k] = cs.getPropertyValue('--' + k).trim();
+  }
+  function rowY(c) {
+    // a little extra room between chains, like a printed montage
+    return topPad + c * chH + CH[c].chain * chH * 0.35 + chH / 2;
+  }
+  function resize() {
+    const box = cv.parentElement.getBoundingClientRect();
+    W = Math.max(280, box.width);
+    const narrow = W < 640;
+    labelW = narrow ? 58 : 76;
+    chH = narrow ? 24 : 30;
+    basePage = narrow ? 5 : 10;
+    H = rowY(CH.length - 1) + chH / 2 + botPad;
+    dpr = window.devicePixelRatio || 1;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    cv.style.height = H + 'px';
+    plotW = W - labelW - 10;
+    draw();
+  }
+
+  function draw() {
+    readColorsIfNeeded();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = col.surface; ctx.fillRect(0, 0, W, H);
+    const pageSec = basePage * 30 / S.speed;
+    const vis = Math.round(pageSec * FS);
+    const pxPerMm = plotW / (basePage * 30);
+    const kV = pxPerMm / S.sens; // px per µV
+    const x0 = labelW;
+    const plotH = H - botPad;
+
+    // grid: thin every 0.2 s, strong every 1 s
+    const step = S.speed >= 60 ? 0.1 : 0.2;
+    for (let s = 0, i = 0; s <= pageSec + 1e-6; s += step, i++) {
+      const strong = Math.abs(s - Math.round(s)) < 1e-6;
+      const x = Math.round(x0 + s / pageSec * plotW) + 0.5;
+      ctx.strokeStyle = strong ? col['grid-strong'] : col.grid;
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, 8); ctx.lineTo(x, plotH); ctx.stroke();
+    }
+
+    // labels
+    ctx.font = `500 ${chH < 28 ? 10 : 11.5}px ${col['font-mono']}`;
+    ctx.textBaseline = 'middle';
+    for (let c = 0; c < CH.length; c++) {
+      const y = rowY(c);
+      ctx.fillStyle = CH[c].side === 0 ? col.left : CH[c].side === 1 ? col.right : col.ink;
+      ctx.fillText(CH[c].label, 8, y);
+    }
+
+    // traces (sweep display: new data overwrites old from left to right)
+    const p = wTot % vis;
+    const gap = Math.round(FS * 0.08 * 30 / S.speed) + 2;
+    const pageStart = wTot - p;
+    const lim = chH * 2.4;
+    ctx.lineWidth = 1.15;
+    ctx.lineJoin = 'round';
+    for (let c = 0; c < CH.length; c++) {
+      const y0 = rowY(c), b = buf[c];
+      ctx.strokeStyle = CH[c].side === 0 ? col.left : CH[c].side === 1 ? col.right : col.ink;
+      ctx.beginPath();
+      let pen = false;
+      for (let j = 0; j < vis; j++) {
+        if (j >= p && j < p + gap) { pen = false; continue; }
+        const idx = j < p ? pageStart + j : pageStart - vis + j;
+        if (idx < 0) { pen = false; continue; }
+        const v = b[idx % BUF];
+        // negative up: a positive voltage goes down on the screen
+        const y = y0 + clamp(v * kV, -lim, lim);
+        const x = x0 + j / vis * plotW;
+        if (pen) ctx.lineTo(x, y); else { ctx.moveTo(x, y); pen = true; }
+      }
+      ctx.stroke();
+    }
+
+    // sweep cursor
+    const cx = x0 + p / vis * plotW;
+    ctx.strokeStyle = col.accent; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(cx, 8); ctx.lineTo(cx, plotH); ctx.stroke();
+
+    // annotations, written at the top like a technician's notes
+    ctx.font = `500 11px ${col['font-mono']}`;
+    ctx.textBaseline = 'alphabetic';
+    for (const a of annots) {
+      let j;
+      if (a.w >= pageStart) j = a.w - pageStart;
+      else if (a.w >= pageStart - vis) { j = a.w - (pageStart - vis); if (j < p + gap) continue; }
+      else continue;
+      const x = x0 + j / vis * plotW;
+      ctx.strokeStyle = col.mark; ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(x + 0.5, 18); ctx.lineTo(x + 0.5, plotH); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = col.mark;
+      ctx.fillText(a.text, Math.min(x + 4, W - ctx.measureText(a.text).width - 4), 14);
+    }
+
+    // calibration mark: 1 s horizontal, 50 µV vertical
+    const calY = H - 10;
+    const oneSec = plotW / pageSec;
+    const uv50 = 50 * kV;
+    const cxs = W - 12 - oneSec;
+    ctx.strokeStyle = col.ink; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(cxs, calY - uv50); ctx.lineTo(cxs, calY); ctx.lineTo(cxs + oneSec, calY); ctx.stroke();
+    ctx.fillStyle = col.muted; ctx.font = `400 11px ${col['font-mono']}`;
+    ctx.textBaseline = 'alphabetic';
+    const calTxt = `50 µV  ·  1 s`;
+    ctx.fillText(calTxt, cxs - ctx.measureText(calTxt).width - 8, calY);
+    ctx.fillText(`${pageSec.toFixed(pageSec < 10 ? 1 : 0).replace('.', ',')} s / sayfa`, x0, calY);
+
+    statusEl.innerHTML =
+      `<span>Durum: <b>${STATES[S.state].label}</b></span>` +
+      `<span><b>${S.sens}</b> µV/mm · <b>${S.speed}</b> mm/s · LFF <b>${String(S.lff).replace('.', ',')}</b> Hz · HFF <b>${S.hff}</b> Hz · Notch <b>${S.notch ? 'açık' : 'kapalı'}</b></span>` +
+      `<span>Kayıt süresi <b>${fmtTime(t)}</b></span>`;
+  }
+  function fmtTime(s) { const m = Math.floor(s / 60), r = Math.floor(s % 60); return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`; }
+
+  let colorsDirty = true;
+  function readColorsIfNeeded() { if (colorsDirty) { readColors(); colorsDirty = false; } }
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { colorsDirty = true; draw(); });
+  new MutationObserver(() => { colorsDirty = true; draw(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  // ---------- Loop ----------
+  let last = performance.now(), acc = 0;
+  function frame(now) {
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    if (!S.paused) {
+      acc += dt * FS;
+      const n = Math.floor(acc); acc -= n;
+      for (let i = 0; i < n; i++) sampleOnce();
+      draw();
+    }
+    requestAnimationFrame(frame);
+  }
+
+  // prefill so the first frame already shows a full page
+  for (let i = 0; i < FS * 10; i++) sampleOnce();
+
+  // ---------- Controls ----------
+  const $ = id => document.getElementById(id);
+  document.querySelectorAll('#states button').forEach(b => b.addEventListener('click', () => {
+    if (S.state === b.dataset.state) return;
+    S.state = b.dataset.state;
+    document.querySelectorAll('#states button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    annot(ANN[S.state]);
+    nextAuto = t + 1; nextSleepEv = t + 1.5;
+    if (S.paused) draw();
+  }));
+  $('bBlink').addEventListener('click', () => { addEvent('blink', { amp: 160 }, 'Göz kırpma'); });
+  const popEls = ['T3', 'C4', 'O2', 'F3', 'P4', 'T5'];
+  $('bPop').addEventListener('click', () => {
+    const name = popEls[Math.floor(Math.random() * popEls.length)];
+    addEvent('pop', { el: IDX[name] }, `${name} atması`);
+    const dot = document.querySelector(`#head [data-el="${name}"]`);
+    if (dot) { dot.classList.remove('flash'); void dot.getBoundingClientRect(); dot.classList.add('flash'); }
+  });
+  function toggle(id, key, label) {
+    $(id).addEventListener('click', () => {
+      S[key] = !S[key];
+      $(id).setAttribute('aria-pressed', String(S[key]));
+      annot(`${label} ${S[key] ? 'başladı' : 'bitti'}`);
+    });
+  }
+  toggle('tEmg', 'emg', 'Kas');
+  toggle('tLine', 'line', '50 Hz');
+  toggle('tEcg', 'ecg', 'EKG');
+  $('sens').addEventListener('change', e => { S.sens = +e.target.value; draw(); });
+  $('speed').addEventListener('change', e => { S.speed = +e.target.value; draw(); });
+  $('lff').addEventListener('change', e => { S.lff = +e.target.value; buildFilters(); });
+  $('hff').addEventListener('change', e => { S.hff = +e.target.value; buildFilters(); });
+  $('notch').addEventListener('change', e => { S.notch = e.target.checked; annot(`Notch ${S.notch ? 'açık' : 'kapalı'}`); });
+  $('bPause').addEventListener('click', () => {
+    S.paused = !S.paused;
+    $('bPause').textContent = S.paused ? 'Devam et' : 'Durdur';
+    $('bPause').setAttribute('aria-pressed', String(S.paused));
+    last = performance.now();
+  });
+
+  // ---------- Head map ----------
+  const svg = $('head');
+  const NS = 'http://www.w3.org/2000/svg';
+  function mk(tag, attrs, parent = svg) { const el = document.createElementNS(NS, tag); for (const k in attrs) el.setAttribute(k, attrs[k]); parent.appendChild(el); return el; }
+  const st = (v) => `var(--${v})`;
+  mk('path', { d: 'M -0.13 -1.0 L 0 -1.15 L 0.13 -1.0', fill: 'none', stroke: st('muted'), 'stroke-width': 0.02 });
+  mk('ellipse', { cx: -1.03, cy: 0, rx: 0.06, ry: 0.16, fill: 'none', stroke: st('muted'), 'stroke-width': 0.02 });
+  mk('ellipse', { cx: 1.03, cy: 0, rx: 0.06, ry: 0.16, fill: 'none', stroke: st('muted'), 'stroke-width': 0.02 });
+  mk('circle', { cx: 0, cy: 0, r: 1, fill: st('paper'), stroke: st('muted'), 'stroke-width': 0.02 });
+  CHAINS.forEach(c => {
+    const pts = c.list.map(n => EL[n].join(',')).join(' ');
+    mk('polyline', { points: pts, fill: 'none', stroke: st(c.side === 0 ? 'left' : c.side === 1 ? 'right' : 'ink'), 'stroke-width': 0.022, 'stroke-opacity': 0.55 });
+  });
+  NAMES.forEach(n => {
+    const [x, y] = EL[n];
+    mk('circle', { cx: x, cy: y, r: 0.055, fill: st('surface'), stroke: st('ink'), 'stroke-width': 0.018, 'data-el': n });
+    const tx = mk('text', { x, y: y - 0.085, 'text-anchor': 'middle', 'font-size': 0.085, fill: st('ink'), 'font-family': 'IBM Plex Mono, monospace' });
+    tx.textContent = n;
+  });
+  const lbl = (x, y, s) => { const e = mk('text', { x, y, 'text-anchor': 'middle', 'font-size': 0.075, fill: st('muted'), 'font-family': 'Figtree, sans-serif' }); e.textContent = s; };
+  lbl(0, -1.18, 'burun');
+  lbl(-1.03, 0.27, 'sol');
+  lbl(1.03, 0.27, 'sağ');
+
+  new ResizeObserver(resize).observe(cv.parentElement);
+  resize();
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce) { S.paused = true; $('bPause').textContent = 'Devam et'; $('bPause').setAttribute('aria-pressed', 'true'); }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
