@@ -41,7 +41,9 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body {
+  margin: 0;
   background: var(--paper); color: var(--ink);
   font-family: var(--font-body); font-size: 15px; line-height: 1.55;
 }
@@ -58,6 +60,11 @@ h2 { font-size: 22px; font-weight: 700; }
 h3 { font-size: 16px; font-weight: 700; }
 p { margin: 0; }
 .lede { max-width: 68ch; color: var(--muted); margin-top: 8px; }
+header { display: grid; gap: 4px; }
+.sitenav { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.sitenav a { font: 500 13px/1 var(--font-body); color: var(--ink); text-decoration: none; padding: 8px 13px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); }
+.sitenav a:hover { border-color: var(--accent); }
+.sitenav a[aria-current="page"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
 .eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
 
 /* Instrument */
@@ -83,6 +90,12 @@ select { padding: 7px 8px; }
 .check input { accent-color: var(--accent); width: 16px; height: 16px; }
 .screen { position: relative; }
 canvas { display: block; width: 100%; }
+/* on phones the screen comes first and the buttons sit under it, within thumb reach */
+@media (max-width: 640px) {
+  .instrument { display: flex; flex-direction: column; }
+  .instrument > .screen { order: -1; border-bottom: 1px solid var(--line); }
+  .instrument > .controls { border-bottom: 0; }
+}
 .status { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--line);
   font-family: var(--font-mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .status b { color: var(--ink); font-weight: 500; }
@@ -124,6 +137,7 @@ kbd { font-family: var(--font-mono); font-size: 12px; background: var(--paper); 
 
 <div class="wrap">
   <header>
+    <nav class="sitenav" aria-label="Simülatörler"><a href="index.html" aria-current="page">EEG</a><a href="emg.html">EMG ve sinir iletimi</a></nav>
     <div class="eyebrow">Elektronörofizyoloji · Çalışma aracı</div>
     <h1>EEG trase simülatörü</h1>
     <p class="lede">Ekrandaki çizgiler 10-20 sistemine göre yerleştirilmiş 19 elektrottan, bipolar boyuna montajla ("double banana") üretiliyor. Durumu değiştir, artefakt ekle, filtrelerle oyna; trasenin nasıl değiştiğini gerçek bir cihazdaki gibi izle. Veriler simülasyondur, gerçek hasta kaydı değildir.</p>
@@ -142,13 +156,32 @@ kbd { font-family: var(--font-mono); font-size: 12px; background: var(--paper); 
         </div>
       </div>
       <div class="group">
-        <span class="label">Artefakt</span>
+        <span class="label">Aktivasyon</span>
         <div class="row">
+          <button id="tPhotic" aria-pressed="false">Fotik uyarım</button>
+          <button id="tHv" aria-pressed="false">Hiperventilasyon</button>
+        </div>
+      </div>
+      <div class="group">
+        <span class="label">Artefakt: hasta yapar</span>
+        <div class="row">
+          <button id="bEyes">Gözleri aç / kapat</button>
           <button id="bBlink">Göz kırpma</button>
-          <button id="bPop">Elektrot atması</button>
-          <button id="tEmg" aria-pressed="false">Kas (EMG)</button>
-          <button id="tLine" aria-pressed="false">50 Hz şebeke</button>
+          <button id="bLook">Sağa-sola bakış</button>
+          <button id="bSwallow">Yutkunma</button>
+          <button id="bChew">Çiğneme</button>
+          <button id="bGrind">Diş gıcırdatma</button>
+          <button id="bMove">Baş / vücut hareketi</button>
+        </div>
+      </div>
+      <div class="group">
+        <span class="label">Artefakt: sürekli veya teknik</span>
+        <div class="row">
+          <button id="tEmg" aria-pressed="false">Kas gerginliği</button>
+          <button id="tSweat" aria-pressed="false">Terleme</button>
           <button id="tEcg" aria-pressed="false">EKG</button>
+          <button id="tLine" aria-pressed="false">50 Hz şebeke</button>
+          <button id="bPop">Elektrot atması</button>
         </div>
       </div>
       <div class="group">
@@ -161,7 +194,7 @@ kbd { font-family: var(--font-mono); font-size: 12px; background: var(--paper); 
             <select id="speed"><option value="15">15 mm/s</option><option value="30" selected>30 mm/s</option><option value="60">60 mm/s</option></select>
           </label>
           <label for="lff">LFF (alçak frekans)
-            <select id="lff"><option value="0.5">0,5 Hz</option><option value="1" selected>1 Hz</option><option value="5">5 Hz</option></select>
+            <select id="lff"><option value="0.1">0,1 Hz</option><option value="0.3">0,3 Hz</option><option value="0.5">0,5 Hz</option><option value="1" selected>1 Hz</option><option value="5">5 Hz</option></select>
           </label>
           <label for="hff">HFF (yüksek frekans)
             <select id="hff"><option value="15">15 Hz</option><option value="35">35 Hz</option><option value="70" selected>70 Hz</option></select>
@@ -218,10 +251,24 @@ kbd { font-family: var(--font-mono); font-size: 12px; background: var(--paper); 
       </section>
 
       <section style="display:grid;gap:12px">
+        <h2>Aktivasyon yöntemleri</h2>
+        <div class="art">
+          <div><h3>Fotik uyarım</h3><p>Hastanın gözlerine belirli frekanslarda (1–30 Hz) flaş ışık verilir. Oksipitalde flaşla aynı frekansta dalgalar çıkabilir. Buna <b>fotik sürüklenme</b> (driving) denir. En alttaki "Fotik" satırı her flaşı gösterir.</p></div>
+          <div><h3>Hiperventilasyon</h3><p>Hasta genelde 3 dakika boyunca derin ve hızlı nefes alır. Kanda CO₂ düşer, damarlar daralır ve özellikle çocuklarda yaygın yavaş dalgalar artar (build-up). Nefes bırakılınca düzelir. Simülasyonda süre kısaltıldı.</p></div>
+        </div>
+      </section>
+
+      <section style="display:grid;gap:12px">
         <h2>Artefaktlar: beyinden gelmeyen çizgiler</h2>
         <div class="art">
-          <div><h3>Göz kırpma</h3><p>Kornea pozitif yüklüdür. Göz kapağı kapanınca göz yukarı döner ve Fp elektrotları pozitifleşir, Fp kanallarında büyük, aşağı doğru dalga çıkar.</p></div>
-          <div><h3>Kas (EMG)</h3><p>Çene sıkma, gerginlik. Temporal ve frontal kanallarda hızlı, sivri, sık dalgalar. HFF'yi 15 Hz yapınca azalır ama gerçek beyin aktivitesi de bozulur.</p></div>
+          <div><h3>Göz kırpma</h3><p>Kornea pozitif yüklüdür. Göz kapağı kapanınca göz yukarı döner (Bell fenomeni) ve Fp elektrotları pozitifleşir, Fp kanallarında büyük, aşağı doğru dalga çıkar.</p></div>
+          <div><h3>Gözleri açma ve kapama</h3><p>Kapatınca Fp kanallarında aşağı, açınca yukarı doğru yavaş bir dalga görülür. Aynı anda arkadaki alfa ritmi göz kapanınca belirir, açılınca kaybolur.</p></div>
+          <div><h3>Sağa-sola bakış</h3><p>Sola bakınca sol kornea F7'ye yaklaşır: F7 pozitif, F8 negatif olur. F7 ve F8 kanallarında birbirine ters yönde, kare biçimli dalgalar çıkar.</p></div>
+          <div><h3>Yutkunma</h3><p>Dil ve yutak kasları hem kısa bir kas patlaması hem de dilin hareketinden yavaş bir dalga (glossokinetik artefakt) oluşturur.</p></div>
+          <div><h3>Çiğneme ve diş gıcırdatma</h3><p>Temporal kas kasılır. Çiğnemede ritmik, aralıklı kas patlamaları; diş gıcırdatmada birkaç saniye süren yoğun kas aktivitesi görülür.</p></div>
+          <div><h3>Baş veya vücut hareketi</h3><p>Elektrot kabloları ve elektrotlar oynar. Bütün kanallarda düzensiz, büyük ve yavaş dalgalanmalara kas aktivitesi eşlik eder.</p></div>
+          <div><h3>Kas gerginliği</h3><p>Hasta gergin veya çenesini sıkıyorsa temporal ve frontal kanallarda sürekli hızlı, sivri dalgalar olur. HFF'yi 15 Hz yapınca azalır ama gerçek beyin aktivitesi de bozulur.</p></div>
+          <div><h3>Terleme</h3><p>Ter, elektrot ile deri arasındaki potansiyeli değiştirir ve çok yavaş (0,1–0,5 Hz) dalgalanmalar yapar. LFF'yi 0,1 Hz yapınca belirginleşir, 1 Hz yapınca büyük ölçüde kaybolur.</p></div>
           <div><h3>50 Hz şebeke</h3><p>Türkiye'de şebeke 50 Hz'dir. Bir elektrodun empedansı yüksekse o elektroddan geçen kanallar kalın, bulanık bir banda döner. Notch açınca kaybolur.</p></div>
           <div><h3>Elektrot atması (pop)</h3><p>Gevşek elektrot ani bir sıçrama yapar. Sadece o elektrodu paylaşan iki kanalda, birbirine ters yönde görülür. Bu ters yönlenmeye <b>faz dönüşü</b> denir.</p></div>
           <div><h3>EKG</h3><p>Kalbin elektriği, özellikle kısa boyunlu veya kilolu hastalarda, nabızla eş zamanlı küçük sivri dalgalar olarak görülür.</p></div>
@@ -307,8 +354,16 @@ kbd { font-family: var(--font-mono); font-size: 12px; background: var(--paper); 
       temp, blink,
       ecg: 0.6 * y + 0.5 * x,
       line: n === 'T4' ? 45 : (n === 'F8' || n === 'T6' || n === 'C4') ? 3 : 1.2,
+      // lateral gaze: the cornea (positive) approaches F7 when looking left
+      look: { F7: 1, F8: -1, Fp1: 0.35, Fp2: -0.35, T3: 0.25, T4: -0.25 }[n] || 0,
+      gloss: 0.4 + 0.6 * front,
+      sweat: 0.4 + 0.6 * front,
+      sweatF: 0.08 + Math.random() * 0.12,
+      sweatPh: Math.random() * Math.PI * 2,
     };
   });
+  const sig = x => 1 / (1 + Math.exp(-x));
+  const win = (tau, a, b) => sig((tau - a) / 0.03) - sig((tau - b) / 0.03);
 
   const CHAINS = [
     { side: 0, list: ['Fp1', 'F7', 'T3', 'T5', 'O1'] },
@@ -345,9 +400,13 @@ kbd { font-family: var(--font-mono); font-size: 12px; background: var(--paper); 
 
   const S = {
     state: 'closed', amp: { alpha: 45, beta: 6, theta: 6, delta: 5 },
-    emg: false, line: false, ecg: false,
+    emg: false, line: false, ecg: false, sweat: false, hv: false,
     sens: 7, speed: 30, lff: 1, hff: 70, notch: false, paused: false,
   };
+  let hvLvl = 0, sweatLvl = 0;
+  const PHOTIC_FREQS = [1, 3, 6, 8, 10, 12, 14, 16, 18, 20, 24, 30];
+  const ph = { on: false, step: 0, t0: 0, next: 0 };
+  let flashNow = 0;
   let t = 0, wTot = 0;
   let events = [];
   let nextAuto = 2, nextSleepEv = 3, nextBeat = 0.4;
@@ -364,6 +423,7 @@ kbd { font-family: var(--font-mono); font-size: 12px; background: var(--paper); 
   }
   buildFilters();
   const buf = CH.map(() => new Float32Array(BUF));
+  const photicBuf = new Uint8Array(BUF);
 
   function eventVal(ev, tau, e) {
     const g = G[e];
@@ -378,10 +438,38 @@ kbd { font-family: var(--font-mono); font-size: 12px; background: var(--paper); 
         return 110 * g.kc * (-Math.exp(-Math.pow((tau - 0.18) / 0.07, 2)) + 0.55 * Math.exp(-Math.pow((tau - 0.45) / 0.14, 2)));
       case 'pop':
         return e === ev.el ? 220 * (1 - Math.exp(-tau / 0.006)) * Math.exp(-tau / 0.35) : 0;
+      // closing: eyes roll up, Fp turns positive (down); opening is the reverse
+      case 'eyeclose':
+        return 90 * g.blink * (1 - Math.exp(-tau / 0.07)) * Math.exp(-tau / 1.1);
+      case 'eyeopen':
+        return -70 * g.blink * (1 - Math.exp(-tau / 0.07)) * Math.exp(-tau / 1.1);
+      case 'look':
+        return ev.dir * 120 * g.look * win(tau, 0.15, 1.0);
+      case 'swallow':
+        return 50 * g.gloss * Math.exp(-Math.pow((tau - 0.55) / 0.22, 2));
+      case 'move':
+        return ev.k[e] * 130 * Math.sin(2 * Math.PI * ev.f[e] * tau + ev.ph[e]) * Math.sin(Math.PI * tau / EVDUR.move);
+      case 'flash':
+        return ev.amp * g.alpha * (-Math.exp(-Math.pow((tau - 0.1) / 0.025, 2)) + 0.7 * Math.exp(-Math.pow((tau - 0.16) / 0.035, 2)));
     }
     return 0;
   }
-  const EVDUR = { blink: 0.6, spindle: 1.2, kc: 1.0, pop: 1.8 };
+  // muscle envelope an event adds at electrode e (multiplies high-pass noise)
+  function eventMusc(ev, tau, e) {
+    const g = G[e];
+    switch (ev.type) {
+      case 'swallow': return 1.4 * g.temp * win(tau, 0.15, 0.85);
+      case 'chew': {
+        let s = 0;
+        for (let k = 0; k < 5; k++) s += Math.exp(-Math.pow((tau - 0.25 - k * 0.7) / 0.12, 2));
+        return 2.2 * g.temp * s;
+      }
+      case 'grind': return 2.0 * g.temp * win(tau, 0.1, 2.4) * (0.65 + 0.35 * Math.sin(2 * Math.PI * 5 * tau));
+      case 'move': return 0.9 * win(tau, 0.1, 2.0);
+    }
+    return 0;
+  }
+  const EVDUR = { blink: 0.6, spindle: 1.2, kc: 1.0, pop: 1.8, eyeclose: 3.5, eyeopen: 3.5, look: 1.4, swallow: 1.2, chew: 3.6, grind: 2.6, move: 2.2, flash: 0.3 };
 
   function ecgShape(tau) {
     return Math.exp(-Math.pow((tau - 0.05) / 0.012, 2)) - 0.25 * Math.exp(-Math.pow((tau - 0.072) / 0.014, 2)) + 0.15 * Math.exp(-Math.pow((tau - 0.3) / 0.06, 2));
@@ -404,6 +492,29 @@ kbd { font-family: var(--font-mono); font-size: 12px; background: var(--paper); 
     }
     if (S.ecg && t > nextBeat) { beatT0 = t; nextBeat = t + 0.8 + (Math.random() - 0.5) * 0.06; }
     emgEnv += ((0.4 + Math.random() * 1.2) - emgEnv) * 0.002;
+    hvLvl += ((S.hv ? 1 : 0) - hvLvl) * dt / (S.hv ? 18 : 10);
+    sweatLvl += ((S.sweat ? 1 : 0) - sweatLvl) * dt / 3;
+
+    // photic protocol: 5 s of flashes per frequency, then 2 s rest
+    flashNow = 0;
+    if (ph.on) {
+      if (t - ph.t0 >= 7) {
+        ph.step++;
+        if (ph.step >= PHOTIC_FREQS.length) { setPhotic(false); }
+        else { ph.t0 = t; ph.next = t; annot(`Fotik ${PHOTIC_FREQS[ph.step]} Hz`); }
+      }
+      const f = PHOTIC_FREQS[ph.step];
+      if (ph.on && t - ph.t0 < 5 && t >= ph.next) {
+        flashNow = 1;
+        ph.next += 1 / f;
+        // driving is strongest near the patient's alpha frequency
+        addEvent('flash', { amp: 16 * (1 + 1.3 * Math.exp(-Math.pow((f - 10) / 4, 2))) });
+      }
+    }
+    const A = {
+      alpha: S.amp.alpha, beta: S.amp.beta,
+      theta: S.amp.theta + 22 * hvLvl, delta: S.amp.delta + 60 * hvLvl,
+    };
 
     const sh = {};
     for (const r in RH) sh[r] = [shared[r][0].next(), shared[r][1].next()];
@@ -416,16 +527,22 @@ kbd { font-family: var(--font-mono); font-size: 12px; background: var(--paper); 
       let v = 0;
       for (const r in RH) {
         const s = g.side === 2 ? 0.5 * (sh[r][0] + sh[r][1]) : sh[r][g.side];
-        let a = S.amp[r] * g[r] * (0.75 * s + 0.45 * L[r].next());
+        let a = A[r] * g[r] * (0.75 * s + 0.45 * L[r].next());
         if (r === 'alpha') a *= alphaEnv;
         v += a;
       }
       const d = drift[e]; d.v = 0.995 * d.v + randn() * 1.2; v += d.v;
       v += randn() * 1.5;
-      if (S.emg) v += 22 * g.temp * emgEnv * emgF[e].step(randn());
+      let musc = S.emg ? g.temp * emgEnv : 0;
+      if (sweatLvl > 0.001) v += 150 * sweatLvl * g.sweat * Math.sin(2 * Math.PI * g.sweatF * t + g.sweatPh);
       if (S.line) v += g.line * line;
       if (S.ecg) v += 40 * g.ecg * ecg;
-      for (const E of events) { const tau = t - E.t0; if (tau >= 0 && tau < EVDUR[E.type]) v += eventVal(E, tau, e); }
+      for (const E of events) {
+        const tau = t - E.t0;
+        if (tau >= 0 && tau < EVDUR[E.type]) { v += eventVal(E, tau, e); musc += eventMusc(E, tau, e); }
+      }
+      const nz = emgF[e].step(randn());
+      if (musc > 0) v += 22 * musc * nz;
       ev[e] = v;
     }
     if (events.length) events = events.filter(E => t - E.t0 < EVDUR[E.type]);
@@ -439,6 +556,7 @@ kbd { font-family: var(--font-mono); font-size: 12px; background: var(--paper); 
       if (S.notch) y = f.notch.step(y);
       buf[c][w] = y;
     }
+    photicBuf[w] = flashNow;
     wTot++;
   }
 
@@ -452,7 +570,7 @@ kbd { font-family: var(--font-mono); font-size: 12px; background: var(--paper); 
   const cv = document.getElementById('cv');
   const ctx = cv.getContext('2d');
   const statusEl = document.getElementById('status');
-  let W = 0, H = 0, dpr = 1, labelW = 72, chH = 30, topPad = 22, botPad = 30, plotW = 0, basePage = 10;
+  let W = 0, H = 0, dpr = 1, labelW = 72, chH = 30, topPad = 36, botPad = 30, plotW = 0, basePage = 10;
   let col = {};
   function readColors() {
     const cs = getComputedStyle(document.documentElement);
@@ -462,6 +580,7 @@ kbd { font-family: var(--font-mono); font-size: 12px; background: var(--paper); 
     // a little extra room between chains, like a printed montage
     return topPad + c * chH + CH[c].chain * chH * 0.35 + chH / 2;
   }
+  function photicY() { return rowY(CH.length - 1) + chH * 1.3; }
   function resize() {
     const box = cv.parentElement.getBoundingClientRect();
     W = Math.max(280, box.width);
@@ -469,7 +588,7 @@ kbd { font-family: var(--font-mono); font-size: 12px; background: var(--paper); 
     labelW = narrow ? 58 : 76;
     chH = narrow ? 24 : 30;
     basePage = narrow ? 5 : 10;
-    H = rowY(CH.length - 1) + chH / 2 + botPad;
+    H = photicY() + chH / 2 + botPad;
     dpr = window.devicePixelRatio || 1;
     cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
     cv.style.height = H + 'px';
@@ -506,6 +625,8 @@ kbd { font-family: var(--font-mono); font-size: 12px; background: var(--paper); 
       ctx.fillStyle = CH[c].side === 0 ? col.left : CH[c].side === 1 ? col.right : col.ink;
       ctx.fillText(CH[c].label, 8, y);
     }
+    ctx.fillStyle = col.muted;
+    ctx.fillText('Fotik', 8, photicY());
 
     // traces (sweep display: new data overwrites old from left to right)
     const p = wTot % vis;
@@ -532,6 +653,20 @@ kbd { font-family: var(--font-mono); font-size: 12px; background: var(--paper); 
       ctx.stroke();
     }
 
+    // photic stimulator channel: one tick per flash
+    const py = photicY();
+    ctx.strokeStyle = col.muted; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x0, py + 6); ctx.lineTo(x0 + plotW, py + 6);
+    for (let j = 0; j < vis; j++) {
+      if (j >= p && j < p + gap) continue;
+      const idx = j < p ? pageStart + j : pageStart - vis + j;
+      if (idx < 0 || !photicBuf[idx % BUF]) continue;
+      const x = Math.round(x0 + j / vis * plotW) + 0.5;
+      ctx.moveTo(x, py + 6); ctx.lineTo(x, py - 7);
+    }
+    ctx.stroke();
+
     // sweep cursor
     const cx = x0 + p / vis * plotW;
     ctx.strokeStyle = col.accent; ctx.lineWidth = 1.5;
@@ -540,18 +675,29 @@ kbd { font-family: var(--font-mono); font-size: 12px; background: var(--paper); 
     // annotations, written at the top like a technician's notes
     ctx.font = `500 11px ${col['font-mono']}`;
     ctx.textBaseline = 'alphabetic';
+    const shownAnn = [];
     for (const a of annots) {
       let j;
       if (a.w >= pageStart) j = a.w - pageStart;
       else if (a.w >= pageStart - vis) { j = a.w - (pageStart - vis); if (j < p + gap) continue; }
       else continue;
-      const x = x0 + j / vis * plotW;
+      shownAnn.push({ x: x0 + j / vis * plotW, text: a.text });
+    }
+    shownAnn.sort((a, b) => a.x - b.x);
+    // two text rows so close-together notes don't print over each other
+    const rowEnd = [-Infinity, -Infinity];
+    for (const a of shownAnn) {
+      const tw = ctx.measureText(a.text).width;
+      const tx = Math.min(a.x + 4, W - tw - 4);
+      let r = tx > rowEnd[0] + 6 ? 0 : tx > rowEnd[1] + 6 ? 1 : (rowEnd[0] <= rowEnd[1] ? 0 : 1);
+      rowEnd[r] = tx + tw;
+      const ty = r === 0 ? 13 : 27;
       ctx.strokeStyle = col.mark; ctx.lineWidth = 1;
       ctx.setLineDash([3, 3]);
-      ctx.beginPath(); ctx.moveTo(x + 0.5, 18); ctx.lineTo(x + 0.5, plotH); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(a.x + 0.5, ty + 4); ctx.lineTo(a.x + 0.5, plotH); ctx.stroke();
       ctx.setLineDash([]);
       ctx.fillStyle = col.mark;
-      ctx.fillText(a.text, Math.min(x + 4, W - ctx.measureText(a.text).width - 4), 14);
+      ctx.fillText(a.text, tx, ty);
     }
 
     // calibration mark: 1 s horizontal, 50 µV vertical
@@ -568,7 +714,7 @@ kbd { font-family: var(--font-mono); font-size: 12px; background: var(--paper); 
     ctx.fillText(`${pageSec.toFixed(pageSec < 10 ? 1 : 0).replace('.', ',')} s / sayfa`, x0, calY);
 
     statusEl.innerHTML =
-      `<span>Durum: <b>${STATES[S.state].label}</b></span>` +
+      `<span>Durum: <b>${STATES[S.state].label}</b>${S.hv ? ' · <b>HV</b>' : ''}${ph.on ? ` · <b>Fotik ${PHOTIC_FREQS[ph.step]} Hz</b>` : ''}</span>` +
       `<span><b>${S.sens}</b> µV/mm · <b>${S.speed}</b> mm/s · LFF <b>${String(S.lff).replace('.', ',')}</b> Hz · HFF <b>${S.hff}</b> Hz · Notch <b>${S.notch ? 'açık' : 'kapalı'}</b></span>` +
       `<span>Kayıt süresi <b>${fmtTime(t)}</b></span>`;
   }
@@ -597,15 +743,40 @@ kbd { font-family: var(--font-mono); font-size: 12px; background: var(--paper); 
 
   // ---------- Controls ----------
   const $ = id => document.getElementById(id);
-  document.querySelectorAll('#states button').forEach(b => b.addEventListener('click', () => {
-    if (S.state === b.dataset.state) return;
-    S.state = b.dataset.state;
-    document.querySelectorAll('#states button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
-    annot(ANN[S.state]);
+  function setState(ns) {
+    if (S.state === ns) return;
+    const prev = S.state;
+    S.state = ns;
+    document.querySelectorAll('#states button').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.state === ns)));
+    annot(ANN[ns]);
+    if (ns === 'open' && prev !== 'open') addEvent('eyeopen');
+    if (ns === 'closed' && prev === 'open') addEvent('eyeclose');
     nextAuto = t + 1; nextSleepEv = t + 1.5;
     if (S.paused) draw();
-  }));
+  }
+  document.querySelectorAll('#states button').forEach(b => b.addEventListener('click', () => setState(b.dataset.state)));
+  $('bEyes').addEventListener('click', () => setState(S.state === 'open' ? 'closed' : 'open'));
   $('bBlink').addEventListener('click', () => { addEvent('blink', { amp: 160 }, 'Göz kırpma'); });
+  let lookDir = -1;
+  $('bLook').addEventListener('click', () => {
+    lookDir = -lookDir;
+    addEvent('look', { dir: lookDir }, lookDir > 0 ? 'Sola bakış' : 'Sağa bakış');
+  });
+  $('bSwallow').addEventListener('click', () => addEvent('swallow', {}, 'Yutkunma'));
+  $('bChew').addEventListener('click', () => addEvent('chew', {}, 'Çiğneme'));
+  $('bGrind').addEventListener('click', () => addEvent('grind', {}, 'Diş gıcırdatma'));
+  $('bMove').addEventListener('click', () => addEvent('move', {
+    k: NAMES.map(() => (0.3 + 0.7 * Math.random()) * (Math.random() < 0.5 ? -1 : 1)),
+    f: NAMES.map(() => 0.6 + 1.4 * Math.random()),
+    ph: NAMES.map(() => Math.random() * Math.PI * 2),
+  }, 'Hareket'));
+  function setPhotic(on) {
+    ph.on = on;
+    $('tPhotic').setAttribute('aria-pressed', String(on));
+    if (on) { ph.step = 0; ph.t0 = t; ph.next = t; annot(`Fotik ${PHOTIC_FREQS[0]} Hz`); }
+    else annot('Fotik bitti');
+  }
+  $('tPhotic').addEventListener('click', () => setPhotic(!ph.on));
   const popEls = ['T3', 'C4', 'O2', 'F3', 'P4', 'T5'];
   $('bPop').addEventListener('click', () => {
     const name = popEls[Math.floor(Math.random() * popEls.length)];
@@ -621,6 +792,8 @@ kbd { font-family: var(--font-mono); font-size: 12px; background: var(--paper); 
     });
   }
   toggle('tEmg', 'emg', 'Kas');
+  toggle('tSweat', 'sweat', 'Terleme');
+  toggle('tHv', 'hv', 'HV');
   toggle('tLine', 'line', '50 Hz');
   toggle('tEcg', 'ecg', 'EKG');
   $('sens').addEventListener('change', e => { S.sens = +e.target.value; draw(); });

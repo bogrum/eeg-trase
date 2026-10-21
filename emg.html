@@ -1,0 +1,956 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>EMG Çekim Simülatörü</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: same instrument language as the EEG page. Two modes behind tabs (needle EMG, nerve conduction); each is a control strip over an oscilloscope screen, with explanations below. */
+:root {
+  --paper: #f4f7f6;
+  --surface: #ffffff;
+  --grid: #dfe8e5;
+  --grid-strong: #b7cac4;
+  --ink: #1c2a31;
+  --muted: #5b6d71;
+  --line: #d3dedb;
+  --accent: #0d6c86;
+  --accent-soft: #dcedf2;
+  --trace: #12603a;
+  --faint: #9db8ae;
+  --mark: #b45309;
+  --font-display: "Bricolage Grotesque", "Figtree", system-ui, sans-serif;
+  --font-body: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0d1416; --surface: #131d20; --grid: #172428; --grid-strong: #293e44;
+    --ink: #d3e5e1; --muted: #8ba2a4; --line: #23353a; --accent: #4cb6d4; --accent-soft: #15323b;
+    --trace: #6fe0a2; --faint: #2f5a48; --mark: #f2a25c; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0d1416; --surface: #131d20; --grid: #172428; --grid-strong: #293e44;
+  --ink: #d3e5e1; --muted: #8ba2a4; --line: #23353a; --accent: #4cb6d4; --accent-soft: #15323b;
+  --trace: #6fe0a2; --faint: #2f5a48; --mark: #f2a25c; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.55; }
+.wrap {
+  max-width: 1180px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 48px;
+  display: grid; gap: 28px;
+}
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.15; }
+h1 { font-size: clamp(28px, 4vw, 40px); font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 22px; font-weight: 700; }
+h3 { font-size: 16px; font-weight: 700; }
+p { margin: 0; }
+header { display: grid; gap: 4px; }
+.sitenav { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.sitenav a { font: 500 13px/1 var(--font-body); color: var(--ink); text-decoration: none; padding: 8px 13px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); }
+.sitenav a:hover { border-color: var(--accent); }
+.sitenav a[aria-current="page"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.lede { max-width: 68ch; color: var(--muted); margin-top: 8px; }
+
+.tabs { display: flex; gap: 0; border-bottom: 1px solid var(--line); }
+.tabs button { border: 0; border-bottom: 3px solid transparent; border-radius: 0; background: none; padding: 12px 16px; font: 600 15px/1 var(--font-body); color: var(--muted); }
+.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.tabs button:hover { background: none; color: var(--ink); }
+
+.instrument { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.controls { display: flex; flex-wrap: wrap; gap: 16px 28px; padding: 16px; border-bottom: 1px solid var(--line); }
+.group { display: grid; gap: 6px; min-width: 0; align-content: start; }
+.group > .label { font-family: var(--font-mono); font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+.row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.seg button { border: 0; border-right: 1px solid var(--line); border-radius: 0; }
+.seg button:last-child { border-right: 0; }
+button, select {
+  font: 500 13px/1 var(--font-body); color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line); border-radius: 7px; padding: 8px 11px; cursor: pointer;
+}
+button:hover { background: var(--accent-soft); }
+button[aria-pressed="true"] { background: var(--accent); color: var(--surface); }
+button.primary { background: var(--accent); color: var(--surface); border-color: var(--accent); font-weight: 600; padding: 9px 18px; }
+button.primary:hover { filter: brightness(1.08); }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+select { padding: 7px 8px; }
+.settings { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+.settings label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.slider { display: grid; gap: 4px; min-width: min(300px, 100%); }
+.slider .top { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+.slider output { font-family: var(--font-mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+.status { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--line);
+  font-family: var(--font-mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.status b { color: var(--ink); font-weight: 500; }
+canvas { display: block; width: 100%; }
+
+.scope { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 300px); }
+.scope > div { min-width: 0; }
+.trig { border-left: 1px solid var(--line); display: grid; align-content: start; }
+.trig h3 { font-size: 13px; font-family: var(--font-mono); font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 12px 14px 0; }
+.metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); border-top: 1px solid var(--line); }
+.metrics div { background: var(--surface); padding: 9px 14px; display: grid; gap: 2px; }
+.metrics span { font-size: 11px; color: var(--muted); font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .05em; }
+.metrics b { font-family: var(--font-mono); font-weight: 500; font-size: 17px; font-variant-numeric: tabular-nums; }
+.hint { font-size: 13px; color: var(--muted); padding: 10px 14px; }
+@media (max-width: 760px) { .scope { grid-template-columns: minmax(0, 1fr); } .trig { border-left: 0; border-top: 1px solid var(--line); } }
+/* on phones the screen comes first and the buttons sit under it, within thumb reach */
+@media (max-width: 640px) {
+  .instrument { display: flex; flex-direction: column; }
+  .instrument > .scope { display: contents; }
+  .scope > div:first-child, .instrument > .ncs-out { order: -1; border-bottom: 1px solid var(--line); }
+  .instrument > .controls { border-bottom: 0; }
+  .trig { border-top: 1px solid var(--line); }
+}
+
+.ncs-out { display: grid; grid-template-columns: minmax(0, 1fr); }
+.chip { display: inline-block; font-family: var(--font-mono); font-size: 11px; letter-spacing: .05em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; border: 1px solid currentColor; }
+.chip.ok { color: var(--trace); } .chip.warn { color: var(--mark); }
+
+.tbl { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.instrument .tbl { border: 0; border-radius: 0; border-top: 1px solid var(--line); }
+table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 14px; }
+th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--font-mono); font-weight: 500; font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+tr:last-child td { border-bottom: 0; }
+td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.bad { color: var(--mark); font-weight: 500; }
+
+.explain { display: grid; gap: 26px; }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; counter-reset: s; }
+.steps li { display: grid; grid-template-columns: 30px minmax(0,1fr); gap: 10px; max-width: 76ch; }
+.steps li::before { counter-increment: s; content: counter(s); font-family: var(--font-mono); font-size: 13px; color: var(--accent);
+  border: 1px solid var(--accent); border-radius: 50%; width: 26px; height: 26px; display: grid; place-items: center; }
+.steps b { font-weight: 600; }
+.note { font-size: 14px; color: var(--muted); max-width: 76ch; }
+.formula { font-family: var(--font-mono); font-size: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; justify-self: start; max-width: 100%; overflow-x: auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <nav class="sitenav" aria-label="Simülatörler"><a href="index.html">EEG</a><a href="emg.html" aria-current="page">EMG ve sinir iletimi</a></nav>
+    <div class="eyebrow">Elektronörofizyoloji · Çalışma aracı</div>
+    <h1>EMG çekim simülatörü</h1>
+    <p class="lede">İğne EMG'de hastayı ve kasılma gücünü seç, iğneyi oynat, hoparlörü açıp potansiyelleri dinle. Sinir iletiminde median siniri bilekten ve dirsekten uyar, latans, amplitüd ve iletim hızını ölç. Veriler simülasyondur, gerçek hasta kaydı değildir.</p>
+  </header>
+
+  <div class="tabs" role="tablist" aria-label="Çekim türü">
+    <button role="tab" id="tabNeedle" aria-selected="true" aria-controls="pNeedle">İğne EMG</button>
+    <button role="tab" id="tabNcs" aria-selected="false" aria-controls="pNcs">Sinir iletimi</button>
+  </div>
+
+  <!-- ===================== NEEDLE EMG ===================== -->
+  <div id="pNeedle" role="tabpanel" aria-labelledby="tabNeedle" style="display:grid;gap:28px">
+    <section class="instrument" aria-label="İğne EMG ekranı">
+      <div class="controls">
+        <div class="group">
+          <span class="label">Hasta</span>
+          <div class="seg" id="profiles" role="group" aria-label="Hasta">
+            <button data-p="normal" aria-pressed="true">Normal</button>
+            <button data-p="neuro" aria-pressed="false">Nöropati (denervasyon)</button>
+            <button data-p="myo" aria-pressed="false">Miyopati</button>
+            <button data-p="myot" aria-pressed="false">Miyotoni</button>
+          </div>
+        </div>
+        <div class="group">
+          <span class="label">Kas</span>
+          <select id="muscle" aria-label="Kas">
+            <option value="ta">Tibialis anterior</option>
+            <option value="fdi">Birinci dorsal interosseöz</option>
+            <option value="bic">Biseps brakii</option>
+          </select>
+        </div>
+        <div class="group" style="flex:1 1 320px">
+          <span class="label">Hastadan iste</span>
+          <div class="slider">
+            <div class="top"><label for="force">Kasılma gücü</label><output id="forceOut" for="force">%0</output></div>
+            <input type="range" id="force" min="0" max="100" value="0" step="1">
+          </div>
+          <div class="row">
+            <button data-f="0">Gevşe</button>
+            <button data-f="12">Hafif kas</button>
+            <button data-f="45">Orta</button>
+            <button data-f="100">Maksimal kas</button>
+            <button id="bNeedle" class="primary">İğneyi oynat</button>
+          </div>
+        </div>
+        <div class="group">
+          <span class="label">Cihaz</span>
+          <div class="settings">
+            <label for="sensN">Hassasiyet
+              <select id="sensN">
+                <option value="50">50 µV/div</option><option value="100">100 µV/div</option><option value="200" selected>200 µV/div</option>
+                <option value="500">500 µV/div</option><option value="1000">1 mV/div</option><option value="2000">2 mV/div</option>
+              </select>
+            </label>
+            <label for="sweepN">Süpürme
+              <select id="sweepN">
+                <option value="10">10 ms/div</option><option value="20" selected>20 ms/div</option><option value="50">50 ms/div</option><option value="100">100 ms/div</option>
+              </select>
+            </label>
+            <button id="bSound" aria-pressed="false">Hoparlörü aç</button>
+            <label for="vol" style="min-width:110px">Ses
+              <input type="range" id="vol" min="0" max="100" value="60">
+            </label>
+            <button id="bPauseN" aria-pressed="false">Durdur</button>
+          </div>
+        </div>
+      </div>
+      <div class="scope">
+        <div><canvas id="cvN" aria-label="İğne EMG osiloskop ekranı"></canvas></div>
+        <div class="trig">
+          <h3>MÜAP tetikleme</h3>
+          <canvas id="cvT" aria-label="Tetiklenen motor ünite potansiyelleri üst üste"></canvas>
+          <div class="metrics">
+            <div><span>Amplitüd</span><b id="mAmp">–</b></div>
+            <div><span>Süre</span><b id="mDur">–</b></div>
+            <div><span>Faz sayısı</span><b id="mPh">–</b></div>
+            <div><span>Ateşleme</span><b id="mRate">–</b></div>
+          </div>
+          <p class="hint" id="trigHint">Hastadan hafifçe kasmasını iste. İlk devreye giren motor ünite yakalanıp üst üste çizilir.</p>
+        </div>
+      </div>
+      <div class="status" id="statusN"></div>
+    </section>
+
+    <div class="explain">
+      <section style="display:grid;gap:14px">
+        <h2>İğne EMG nasıl yapılır?</h2>
+        <ol class="steps">
+          <li><p><b>İğne girişi.</b> İğne kasa girerken veya oynatılırken kas lifleri kısa bir an deşarj olur (insersiyonel aktivite). Normalde 300 ms'den kısa sürer. Denervasyonda uzar; miyotonide miyotonik deşarj başlar.</p></li>
+          <li><p><b>İstirahat.</b> Kas tamamen gevşekken ekran düz olmalıdır. Bu sırada görülen fibrilasyon, pozitif keskin dalga veya fasikülasyon patolojiktir.</p></li>
+          <li><p><b>Hafif kasılma.</b> Tek tek motor ünite aksiyon potansiyelleri (MÜAP) seçilebilir. Amplitüd, süre ve faz sayısı ölçülür.</p></li>
+          <li><p><b>Maksimal kasılma.</b> Rekrütmana bakılır: kas güçlendikçe yeni üniteler katılır. Normalde maksimal kasılmada ekran tamamen dolar (interferans paterni).</p></li>
+        </ol>
+        <p class="note">EMG'de de negatif yukarı çizilir. Fibrilasyon ve pozitif keskin dalga bu yüzden aşağı doğru başlar.</p>
+      </section>
+
+      <section style="display:grid;gap:12px">
+        <h2>İstirahatte görülen spontan aktivite</h2>
+        <div class="tbl">
+          <table>
+            <thead><tr><th>Bulgu</th><th>Görünüş</th><th>Sesi</th><th>Anlamı</th></tr></thead>
+            <tbody>
+              <tr><td>Fibrilasyon potansiyeli</td><td>1–5 ms, küçük (20–200 µV), pozitif başlangıçlı, çok düzenli ateşler</td><td>Teneke çatıya düşen yağmur, cızırtı</td><td>Denervasyon: kas lifi sinirini kaybetmiş</td></tr>
+              <tr><td>Pozitif keskin dalga</td><td>Önce keskin aşağı, sonra yavaşça dönen dalga, düzenli</td><td>Boğuk "tok tok"</td><td>Denervasyon</td></tr>
+              <tr><td>Fasikülasyon</td><td>MÜAP'a benzer, düzensiz ve seyrek</td><td>Arada bir "pat"</td><td>Motor nöron hastalığı (ALS) gibi; sağlıklı kişide de görülebilir</td></tr>
+              <tr><td>Miyotonik deşarj</td><td>Frekansı ve amplitüdü artıp azalan dizi (20–80 Hz)</td><td>Pike yapan uçak, motosiklet</td><td>Miyotoni (miyotonik distrofi, miyotonia konjenita)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note">Simülatörde dene: "Nöropati" seç, kası gevşet, hassasiyeti 50–100 µV/div yap ve hoparlörü aç. "Miyotoni" seçip iğneyi oynat.</p>
+      </section>
+
+      <section style="display:grid;gap:12px">
+        <h2>MÜAP ve rekrütman</h2>
+        <div class="tbl">
+          <table>
+            <thead><tr><th></th><th>Normal</th><th>Nöropatik</th><th>Miyopatik</th></tr></thead>
+            <tbody>
+              <tr><td>Amplitüd</td><td>0,2–2 mV</td><td>Yüksek (dev MÜAP)</td><td>Düşük</td></tr>
+              <tr><td>Süre</td><td class="num">5–15 ms</td><td>Uzun</td><td>Kısa</td></tr>
+              <tr><td>Faz</td><td>2–4</td><td>Polifazik</td><td>Polifazik</td></tr>
+              <tr><td>Rekrütman</td><td>Normal; maksimalde ekran dolar</td><td>Azalmış: az ünite, çok hızlı ateşler</td><td>Erken: hafif kasılmada bile ekran dolar</td></tr>
+              <tr><td>Neden</td><td></td><td>Kalan aksonlar boşta kalan kas liflerini sahiplenir (reinnervasyon), ünite büyür</td><td>Ünitedeki kas lifleri azalır, ünite küçülür</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ===================== NERVE CONDUCTION ===================== -->
+  <div id="pNcs" role="tabpanel" aria-labelledby="tabNcs" hidden style="display:grid;gap:28px">
+    <section class="instrument" aria-label="Sinir iletim ekranı">
+      <div class="controls">
+        <div class="group">
+          <span class="label">Hasta</span>
+          <div class="seg" id="ncsProfiles" role="group" aria-label="Hasta">
+            <button data-c="normal" aria-pressed="true">Normal</button>
+            <button data-c="cts" aria-pressed="false">Karpal tünel</button>
+            <button data-c="demyel" aria-pressed="false">Demiyelinizan</button>
+            <button data-c="axonal" aria-pressed="false">Aksonal</button>
+          </div>
+        </div>
+        <div class="group">
+          <span class="label">Uyarı yeri</span>
+          <div class="seg" id="sites" role="group" aria-label="Uyarı yeri">
+            <button data-s="wrist" aria-pressed="true">Bilek</button>
+            <button data-s="elbow" aria-pressed="false">Dirsek</button>
+          </div>
+        </div>
+        <div class="group" style="flex:1 1 280px">
+          <span class="label">Uyarı</span>
+          <div class="slider">
+            <div class="top"><label for="cur">Akım şiddeti</label><output id="curOut" for="cur">10 mA</output></div>
+            <input type="range" id="cur" min="0" max="50" value="10" step="1">
+          </div>
+          <div class="row">
+            <button id="bStim" class="primary">Uyar</button>
+            <span id="supra" class="chip warn">Henüz uyarı yok</span>
+          </div>
+        </div>
+        <div class="group">
+          <span class="label">Cihaz</span>
+          <div class="settings">
+            <label for="sensC">Hassasiyet
+              <select id="sensC"><option value="1">1 mV/div</option><option value="2">2 mV/div</option><option value="5" selected>5 mV/div</option></select>
+            </label>
+            <label for="sweepC">Süpürme
+              <select id="sweepC"><option value="2">2 ms/div</option><option value="3" selected>3 ms/div</option><option value="5">5 ms/div</option></select>
+            </label>
+            <button id="bClear">Kayıtları sil</button>
+          </div>
+        </div>
+      </div>
+      <div class="ncs-out"><canvas id="cvC" aria-label="Birleşik kas aksiyon potansiyeli kayıtları, bilek ve dirsek"></canvas></div>
+      <div class="tbl">
+        <table>
+          <thead><tr><th>Median motor (APB)</th><th>Akım</th><th>Latans</th><th>Amplitüd</th><th>Mesafe</th><th>İletim hızı</th></tr></thead>
+          <tbody id="ncsTable"></tbody>
+        </table>
+      </div>
+      <div class="status"><span>Normal sınırlar: distal latans <b>≤ 4,4 ms</b> · amplitüd <b>≥ 4 mV</b> · iletim hızı <b>≥ 49 m/s</b></span><span>Klavye: <b>Boşluk</b> = uyar</span></div>
+    </section>
+
+    <div class="explain">
+      <section style="display:grid;gap:14px">
+        <h2>Sinir iletim çalışması nasıl yapılır?</h2>
+        <ol class="steps">
+          <li><p><b>Elektrotlar.</b> Kayıt elektrodu başparmak kasının (abduktor pollisis brevis, APB) üstüne, referans elektrodu başparmağa konur. Toprak elektrodu el sırtına.</p></li>
+          <li><p><b>Bilekten uyarı.</b> Median sinir bilekte, kayıt elektrodundan 7 cm uzaktan uyarılır. Akım yavaş yavaş artırılır.</p></li>
+          <li><p><b>Supramaksimal uyarı.</b> Amplitüd artmayı bırakınca bütün aksonlar uyarılmış demektir. Akım %20 daha artırılır. Submaksimal uyarıyla ölçülen amplitüd yanlış düşük çıkar.</p></li>
+          <li><p><b>Dirsekten uyarı.</b> Aynı sinir dirsekte uyarılır. İki nokta arasındaki mesafe mezura ile ölçülür.</p></li>
+          <li><p><b>Hesap.</b> Kasta oluşan yanıta birleşik kas aksiyon potansiyeli (BKAP, İngilizcesi CMAP) denir. Başlangıcına kadar geçen süre latans, tepe yüksekliği amplitüddür.</p></li>
+        </ol>
+        <div class="formula">İletim hızı (m/s) = mesafe (mm) ÷ (dirsek latansı − bilek latansı) (ms)</div>
+      </section>
+
+      <section style="display:grid;gap:12px">
+        <h2>Bulgular neyi gösterir?</h2>
+        <div class="tbl">
+          <table>
+            <thead><tr><th>Tablo</th><th>Distal latans</th><th>Amplitüd</th><th>İletim hızı</th><th>Neden</th></tr></thead>
+            <tbody>
+              <tr><td>Karpal tünel sendromu</td><td>Uzun</td><td>Normal veya hafif düşük</td><td>Önkolda normal</td><td>Sinir sadece bilekte, tünelde sıkışır</td></tr>
+              <tr><td>Demiyelinizan nöropati</td><td>Uzun</td><td>Dirsekte düşer, yanıt yayvanlaşır</td><td>Çok yavaş</td><td>Miyelin hasarı iletimi yavaşlatır ve dağıtır (temporal dispersiyon)</td></tr>
+              <tr><td>Aksonal nöropati</td><td>Normale yakın</td><td>Düşük</td><td>Normale yakın</td><td>Akson sayısı azalır; kalanlar normal hızda iletir</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note">Gerçek çalışmada duyusal iletim ve F dalgası da bakılır; bu simülatörde yalnızca motor iletim var.</p>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const fmt = (x, d) => x.toFixed(d).replace('.', ',');
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  function randn() {
+    let u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const gauss = (t, c, s) => Math.exp(-0.5 * Math.pow((t - c) / s, 2));
+  const mexhat = x => (1 - x * x) * Math.exp(-x * x / 2);
+
+  let col = {};
+  let colorsDirty = true;
+  function colors() {
+    if (!colorsDirty) return col;
+    const cs = getComputedStyle(document.documentElement);
+    for (const k of ['surface', 'grid', 'grid-strong', 'ink', 'muted', 'accent', 'trace', 'faint', 'mark', 'font-mono']) col[k] = cs.getPropertyValue('--' + k).trim();
+    colorsDirty = false;
+    return col;
+  }
+  const redrawAll = () => { colorsDirty = true; drawNeedle(); drawTrig(); drawNcs(); };
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', redrawAll);
+  new MutationObserver(redrawAll).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  function fitCanvas(cv, h) {
+    const w = Math.max(260, cv.parentElement.getBoundingClientRect().width);
+    const dpr = window.devicePixelRatio || 1;
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+    cv.style.height = h + 'px';
+    const ctx = cv.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { ctx, w, h };
+  }
+  function grid(ctx, x0, y0, w, h, nx, ny) {
+    const c = colors();
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= nx; i++) {
+      const x = Math.round(x0 + i * w / nx) + 0.5;
+      ctx.strokeStyle = i === 0 || i === nx ? c['grid-strong'] : c.grid;
+      ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y0 + h); ctx.stroke();
+    }
+    for (let j = 0; j <= ny; j++) {
+      const y = Math.round(y0 + j * h / ny) + 0.5;
+      ctx.strokeStyle = j === 0 || j === ny || j === ny / 2 ? c['grid-strong'] : c.grid;
+      ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x0 + w, y); ctx.stroke();
+    }
+  }
+
+  // =====================================================================
+  // NEEDLE EMG
+  // =====================================================================
+  const FS = 16000;
+  const RING = FS * 4;
+  const LEAD = Math.round(FS * 0.15); // display trails generation so audio can be scheduled ahead
+  const out = new Float32Array(RING);
+  const acc = new Float32Array(RING);
+  let gen = 0;
+
+  function addTpl(tpl, s, scale = 1) {
+    for (let k = 0; k < tpl.length; k++) acc[(s + k) % RING] += tpl[k] * scale;
+  }
+  function msToN(ms) { return Math.round(ms * FS / 1000); }
+
+  // Motor unit action potential: a fast triphasic spike riding on slow initial/terminal phases,
+  // plus late satellite components when the unit is polyphasic.
+  function makeMuap(amp, dur, extra) {
+    const win = dur * 1.5, n = msToN(win), c = win * 0.4;
+    const sats = [];
+    for (let j = 0; j < extra; j++) sats.push({ off: c + 1.1 + j * rnd(0.9, 1.5), a: amp * rnd(0.3, 0.6) * (j % 2 ? 1 : -1) });
+    const tpl = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const t = i * 1000 / FS;
+      let v = -amp * mexhat((t - c) / 0.45);
+      v += amp * 0.10 * gauss(t, c - dur * 0.28, dur * 0.12);
+      v += amp * 0.16 * gauss(t, c + dur * 0.3, dur * 0.16);
+      for (const s of sats) v += s.a * mexhat((t - s.off) / 0.32);
+      tpl[i] = v;
+    }
+    return { tpl, center: msToN(c) };
+  }
+  function measure(tpl) {
+    let mx = -Infinity, mn = Infinity;
+    for (const v of tpl) { if (v > mx) mx = v; if (v < mn) mn = v; }
+    const pp = mx - mn, thr = 0.04 * pp;
+    let first = -1, last = -1, sign = 0, changes = 0;
+    for (let i = 0; i < tpl.length; i++) {
+      const v = tpl[i];
+      if (Math.abs(v) > thr) {
+        if (first < 0) first = i;
+        last = i;
+        const s = v > 0 ? 1 : -1;
+        if (sign && s !== sign) changes++;
+        sign = s;
+      }
+    }
+    return { pp, dur: (last - first) * 1000 / FS, phases: changes + 1 };
+  }
+  function makeFib(A) {
+    const n = msToN(3), tpl = new Float32Array(n);
+    for (let i = 0; i < n; i++) { const t = i * 1000 / FS; tpl[i] = A * (0.55 * gauss(t, 0.5, 0.15) - gauss(t, 0.9, 0.18) + 0.3 * gauss(t, 1.4, 0.3)); }
+    return tpl;
+  }
+  function makePsw(A) {
+    const n = msToN(20), tpl = new Float32Array(n);
+    for (let i = 0; i < n; i++) { const t = i * 1000 / FS; tpl[i] = A * (1 - Math.exp(-t / 0.2)) * Math.exp(-t / 3.5) - 0.12 * A * gauss(t, 9, 3); }
+    return tpl;
+  }
+
+  const PROFILES = {
+    normal: { label: 'Normal', n: 22, amp: [250, 1400], dur: [8, 12], poly: 0.1, span: 0.85, k: 45, cap: 30, fib: 0, psw: 0, fasc: 0, insert: 0.22 },
+    neuro: { label: 'Nöropati', n: 6, amp: [2500, 6500], dur: [15, 22], poly: 0.55, span: 0.6, k: 110, cap: 42, fib: 3, psw: 2, fasc: 0.35, insert: 0.7 },
+    myo: { label: 'Miyopati', n: 26, amp: [80, 350], dur: [3, 6], poly: 0.6, span: 0.3, k: 45, cap: 32, fib: 0, psw: 0, fasc: 0, insert: 0.22 },
+    myot: { label: 'Miyotoni', n: 22, amp: [250, 1200], dur: [8, 12], poly: 0.1, span: 0.85, k: 45, cap: 30, fib: 0, psw: 0, fasc: 0, insert: 0.2, myotonia: true },
+  };
+  const MUSCLES = {
+    ta: { label: 'Tibialis anterior', amp: 1, dur: 1 },
+    fdi: { label: 'Birinci dorsal interosseöz', amp: 1.35, dur: 0.95 },
+    bic: { label: 'Biseps brakii', amp: 0.8, dur: 0.85 },
+  };
+
+  const N = {
+    profile: 'normal', muscle: 'ta', force: 0, fEff: 0,
+    sens: 200, sweep: 20, paused: false, sound: false, vol: 0.6,
+    units: [], spont: [], fascTpl: null, fibTpl: makeFib(120), myoTpl: makePsw(140),
+    insertUntil: 0, myot: null, nextMyot: 0, nextFasc: 0,
+    captures: [], pending: [], lastCaptureAt: -1e9, m0: null,
+  };
+
+  function buildProfile() {
+    const P = PROFILES[N.profile], M = MUSCLES[N.muscle];
+    N.units = [];
+    for (let i = 0; i < P.n; i++) {
+      const amp = rnd(...P.amp) * M.amp;
+      const dur = rnd(...P.dur) * M.dur;
+      const extra = Math.random() < P.poly ? Math.floor(rnd(2, 5)) : 0;
+      const m = makeMuap(amp, dur, extra);
+      N.units.push({ ...m, thr: 0.02 + P.span * Math.pow(i / P.n, 1.5), next: Infinity, rate: 0 });
+    }
+    // the first recruited unit should show the profile's typical shape clearly
+    const u0 = N.units[0];
+    const P0amp = (P.amp[0] + P.amp[1]) / 2 * M.amp, P0dur = (P.dur[0] + P.dur[1]) / 2 * M.dur;
+    Object.assign(u0, makeMuap(P0amp, P0dur, P.poly > 0.4 ? 3 : 0));
+    N.m0 = measure(u0.tpl);
+    N.spont = [];
+    for (let i = 0; i < P.fib; i++) N.spont.push({ tpl: makeFib(rnd(60, 180)), rate: rnd(3, 12), next: gen + Math.floor(Math.random() * FS * 0.3) });
+    for (let i = 0; i < P.psw; i++) N.spont.push({ tpl: makePsw(rnd(120, 280)), rate: rnd(2, 8), next: gen + Math.floor(Math.random() * FS * 0.4) });
+    N.fascTpl = P.fasc ? makeMuap(4500 * M.amp, 16, 3).tpl : null;
+    N.nextFasc = gen + Math.floor(FS * rnd(0.5, 2));
+    N.nextMyot = gen + Math.floor(FS * rnd(4, 7));
+    N.myot = null;
+    N.captures = []; N.pending = [];
+  }
+
+  function startMyotonia() {
+    N.myot = { t0: gen, dur: Math.floor(FS * rnd(1.5, 3)), next: gen };
+  }
+
+  function needleMove() {
+    const P = PROFILES[N.profile];
+    N.insertUntil = gen + Math.floor(FS * P.insert * rnd(0.85, 1.15));
+    if (N.profile === 'neuro') {
+      // insertional positive sharp wave trains that outlast the movement
+      for (let i = 0; i < 2; i++) N.spont.push({ tpl: makePsw(rnd(150, 300)), rate: rnd(5, 12), next: gen + Math.floor(FS * rnd(0.1, 0.3)), until: gen + FS * rnd(2, 4) });
+    }
+    if (P.myotonia) startMyotonia();
+  }
+
+  function generate(count) {
+    const s0 = gen, s1 = gen + count;
+    const P = PROFILES[N.profile];
+    N.fEff += (N.force - N.fEff) * (1 - Math.exp(-(count / FS) / 0.15));
+
+    N.units.forEach((u, i) => {
+      if (N.fEff > u.thr) {
+        u.rate = Math.min(P.cap, 6 + P.k * (N.fEff - u.thr));
+        if (u.next === Infinity) u.next = s0 + Math.floor(Math.random() * FS / u.rate);
+        while (u.next < s1) {
+          addTpl(u.tpl, u.next);
+          if (i === 0) N.pending.push(u.next + u.center);
+          u.next += Math.max(Math.floor(FS * 0.02), Math.round(FS / u.rate * (1 + 0.1 * randn())));
+        }
+      } else { u.next = Infinity; u.rate = 0; }
+    });
+
+    N.spont = N.spont.filter(g => !g.until || g.until > s0);
+    for (const g of N.spont) {
+      while (g.next < s1) { addTpl(g.tpl, g.next); g.next += Math.round(FS / g.rate * (1 + 0.01 * randn())); }
+    }
+    if (N.fascTpl) {
+      while (N.nextFasc < s1) { addTpl(N.fascTpl, N.nextFasc, rnd(0.6, 1.1)); N.nextFasc += Math.floor(FS * (0.5 - Math.log(Math.random()) / P.fasc)); }
+    }
+    if (P.myotonia) {
+      if (!N.myot && N.nextMyot < s1 && N.fEff < 0.05) { startMyotonia(); N.nextMyot = s1 + Math.floor(FS * rnd(6, 10)); }
+      if (N.myot) {
+        const m = N.myot;
+        while (m && m.next < s1) {
+          const x = (m.next - m.t0) / m.dur;
+          if (x >= 1) { N.myot = null; N.nextMyot = Math.max(N.nextMyot, s1 + Math.floor(FS * rnd(6, 10))); break; }
+          // waxing and waning in both rate and amplitude: the "dive bomber"
+          const env = Math.sin(Math.PI * Math.pow(x, 0.6));
+          addTpl(N.myoTpl, m.next, 0.45 + 0.9 * env);
+          m.next += Math.round(FS / (22 + 58 * env));
+        }
+      }
+    }
+    if (N.insertUntil > s0) {
+      const end = Math.min(s1, N.insertUntil);
+      const nSp = Math.round(220 * (end - s0) / FS + Math.random());
+      for (let i = 0; i < nSp; i++) addTpl(N.fibTpl, s0 + Math.floor(Math.random() * (end - s0)), rnd(0.4, 3) * (Math.random() < 0.5 ? -1 : 1));
+    }
+
+    for (let i = s0; i < s1; i++) {
+      const r = i % RING;
+      out[r] = acc[r] + randn() * 3 + 1.5 * Math.sin(2 * Math.PI * 50 * i / FS);
+      acc[r] = 0;
+    }
+    gen = s1;
+
+    // trigger: copy a window around each firing of the first unit once it is fully generated
+    const pre = msToN(10), len = msToN(30);
+    while (N.pending.length && N.pending[0] - pre + len <= gen) {
+      const c = N.pending.shift();
+      const w = new Float32Array(len);
+      for (let k = 0; k < len; k++) w[k] = out[(c - pre + k + RING) % RING];
+      N.captures.push(w);
+      if (N.captures.length > 6) N.captures.shift();
+      N.lastCaptureAt = gen;
+    }
+    if (N.sound) queueAudio(s0, s1);
+  }
+
+  // ---------- Audio ----------
+  let actx = null, gainNode = null, aT0 = 0, aS0 = 0, aBuf = [], aBufStart = 0;
+  const ABLOCK = 1024;
+  function queueAudio(s0, s1) {
+    if (!actx || actx.state !== 'running') return;
+    if (!aBuf.length) aBufStart = s0;
+    for (let i = s0; i < s1; i++) aBuf.push(out[i % RING]);
+    while (aBuf.length >= ABLOCK) {
+      const chunk = aBuf.splice(0, ABLOCK);
+      let at = aT0 + (aBufStart - aS0) / FS;
+      if (at < actx.currentTime + 0.01) { aT0 = actx.currentTime + 0.03; aS0 = aBufStart; at = aT0; }
+      const b = actx.createBuffer(1, ABLOCK, FS);
+      const d = b.getChannelData(0);
+      for (let k = 0; k < ABLOCK; k++) d[k] = Math.tanh(chunk[k] / 2500);
+      const src = actx.createBufferSource();
+      src.buffer = b; src.connect(gainNode); src.start(at);
+      aBufStart += ABLOCK;
+    }
+  }
+  function setSound(on) {
+    N.sound = on;
+    $('bSound').setAttribute('aria-pressed', String(on));
+    $('bSound').textContent = on ? 'Hoparlörü kapat' : 'Hoparlörü aç';
+    if (on) {
+      try {
+        if (!actx) {
+          actx = new (window.AudioContext || window.webkitAudioContext)();
+          gainNode = actx.createGain(); gainNode.connect(actx.destination);
+        }
+        gainNode.gain.value = N.vol;
+        actx.resume();
+        aBuf = []; aT0 = actx.currentTime + 0.05; aS0 = gen - LEAD;
+      } catch (e) { N.sound = false; $('bSound').textContent = 'Ses açılamadı'; }
+    } else if (actx) { actx.suspend(); aBuf = []; }
+  }
+
+  // ---------- Drawing ----------
+  const cvN = $('cvN'), cvT = $('cvT');
+  let dN = null, dT = null;
+  function sizeNeedle() {
+    const narrow = cvN.parentElement.getBoundingClientRect().width < 520;
+    dN = fitCanvas(cvN, narrow ? 260 : 330);
+    dT = fitCanvas(cvT, 200);
+    drawNeedle(); drawTrig();
+  }
+  function drawNeedle() {
+    if (!dN || $('pNeedle').hidden) return;
+    const { ctx, w, h } = dN, c = colors();
+    ctx.fillStyle = c.surface; ctx.fillRect(0, 0, w, h);
+    const x0 = 12, y0 = 12, pw = w - 24, phh = h - 40;
+    grid(ctx, x0, y0, pw, phh, 10, 8);
+    const vis = Math.round(N.sweep * 10 * FS / 1000);
+    const shown = Math.max(0, gen - LEAD);
+    const p = shown % vis, pageStart = shown - p;
+    const gap = Math.max(2, Math.round(vis * 0.012));
+    const kV = (phh / 8) / N.sens; // px per µV
+    const mid = y0 + phh / 2, lim = phh / 2 + 4;
+    const yOf = v => mid + clamp(v * kV, -lim, lim); // negative up
+    const spp = vis / pw;
+    ctx.strokeStyle = c.trace; ctx.lineWidth = 1.2; ctx.lineJoin = 'round';
+    ctx.beginPath();
+    let pen = false;
+    const sampleAt = j => { const idx = j < p ? pageStart + j : pageStart - vis + j; return idx < 0 ? null : out[idx % RING]; };
+    if (spp <= 1.5) {
+      for (let j = 0; j < vis; j++) {
+        if (j >= p && j < p + gap) { pen = false; continue; }
+        const v = sampleAt(j);
+        if (v === null) { pen = false; continue; }
+        const x = x0 + j / vis * pw, y = yOf(v);
+        if (pen) ctx.lineTo(x, y); else { ctx.moveTo(x, y); pen = true; }
+      }
+    } else {
+      // min/max per pixel column keeps spikes visible at slow sweeps
+      for (let px = 0; px < pw; px++) {
+        const j0 = Math.floor(px * spp), j1 = Math.min(vis, Math.floor((px + 1) * spp));
+        if (j1 > p && j0 < p + gap) { pen = false; continue; }
+        let mn = Infinity, mx = -Infinity, any = false;
+        for (let j = j0; j < j1; j++) { const v = sampleAt(j); if (v === null) continue; any = true; if (v < mn) mn = v; if (v > mx) mx = v; }
+        if (!any) { pen = false; continue; }
+        const x = x0 + px;
+        if (pen) ctx.lineTo(x, yOf(mn)); else { ctx.moveTo(x, yOf(mn)); pen = true; }
+        ctx.lineTo(x, yOf(mx));
+      }
+    }
+    ctx.stroke();
+    const cx = x0 + p / vis * pw;
+    ctx.strokeStyle = c.accent; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(cx, y0); ctx.lineTo(cx, y0 + phh); ctx.stroke();
+    ctx.fillStyle = c.muted; ctx.font = `400 11px ${c['font-mono']}`; ctx.textBaseline = 'alphabetic';
+    const sensTxt = N.sens >= 1000 ? `${N.sens / 1000} mV/div` : `${N.sens} µV/div`;
+    ctx.fillText(`${N.sweep} ms/div · ${sensTxt}`, x0, h - 12);
+    const tr = `${N.sweep * 10 >= 1000 ? '1 s' : N.sweep * 10 + ' ms'} / ekran`;
+    ctx.fillText(tr, w - 12 - ctx.measureText(tr).width, h - 12);
+  }
+  const SENS_STEPS = [50, 100, 200, 500, 1000, 2000, 5000];
+  function drawTrig() {
+    if (!dT || $('pNeedle').hidden) return;
+    const { ctx, w, h } = dT, c = colors();
+    ctx.fillStyle = c.surface; ctx.fillRect(0, 0, w, h);
+    const x0 = 12, y0 = 10, pw = w - 24, phh = h - 34;
+    grid(ctx, x0, y0, pw, phh, 10, 6);
+    const pp = N.m0 ? N.m0.pp : 500;
+    const sens = SENS_STEPS.find(s => pp / s <= 5) || 5000;
+    const kV = (phh / 6) / sens, mid = y0 + phh / 2;
+    const len = msToN(30);
+    const fresh = gen - N.lastCaptureAt < FS * 1.5;
+    N.captures.forEach((cap, i) => {
+      const latest = i === N.captures.length - 1;
+      ctx.strokeStyle = latest && fresh ? c.trace : c.faint;
+      ctx.lineWidth = latest ? 1.4 : 1;
+      ctx.beginPath();
+      for (let k = 0; k < len; k += 2) {
+        const x = x0 + k / len * pw, y = mid + clamp(cap[k] * kV, -phh / 2, phh / 2);
+        k ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      }
+      ctx.stroke();
+    });
+    ctx.fillStyle = c.muted; ctx.font = `400 11px ${c['font-mono']}`; ctx.textBaseline = 'alphabetic';
+    ctx.fillText(`3 ms/div · ${sens >= 1000 ? sens / 1000 + ' mV' : sens + ' µV'}/div`, x0, h - 10);
+
+    const u0 = N.units[0];
+    const firing = u0 && u0.rate > 0;
+    $('mAmp').textContent = N.m0 && N.captures.length ? (N.m0.pp >= 1000 ? fmt(N.m0.pp / 1000, 2) + ' mV' : Math.round(N.m0.pp) + ' µV') : '–';
+    $('mDur').textContent = N.m0 && N.captures.length ? fmt(N.m0.dur, 1) + ' ms' : '–';
+    $('mPh').textContent = N.m0 && N.captures.length ? String(N.m0.phases) : '–';
+    $('mRate').textContent = firing ? fmt(u0.rate, 0) + ' Hz' : '–';
+    $('trigHint').hidden = firing && N.captures.length > 0;
+  }
+  function statusNeedle() {
+    const active = N.units.filter(u => u.rate > 0).length;
+    $('statusN').innerHTML =
+      `<span>Hasta: <b>${PROFILES[N.profile].label}</b> · Kas: <b>${MUSCLES[N.muscle].label}</b></span>` +
+      `<span>Kasılma <b>%${Math.round(N.force * 100)}</b> · Aktif motor ünite <b>${active}</b>${N.insertUntil > gen - LEAD ? ' · <b>insersiyonel aktivite</b>' : ''}${N.myot ? ' · <b>miyotonik deşarj</b>' : ''}</span>`;
+  }
+
+  // ---------- Loop ----------
+  let last = performance.now(), accS = 0, lastStatus = 0;
+  function frame(now) {
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    if (!N.paused) {
+      accS += dt * FS;
+      const n = Math.floor(accS); accS -= n;
+      if (n > 0) generate(n);
+      if (!$('pNeedle').hidden) {
+        drawNeedle(); drawTrig();
+        if (now - lastStatus > 200) { statusNeedle(); lastStatus = now; }
+      }
+    }
+    requestAnimationFrame(frame);
+  }
+
+  // ---------- Needle controls ----------
+  document.querySelectorAll('#profiles button').forEach(b => b.addEventListener('click', () => {
+    N.profile = b.dataset.p;
+    document.querySelectorAll('#profiles button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    buildProfile(); statusNeedle();
+  }));
+  $('muscle').addEventListener('change', e => { N.muscle = e.target.value; buildProfile(); statusNeedle(); });
+  function setForce(pct) {
+    N.force = pct / 100;
+    $('force').value = pct;
+    $('forceOut').textContent = '%' + pct;
+  }
+  $('force').addEventListener('input', e => setForce(+e.target.value));
+  document.querySelectorAll('[data-f]').forEach(b => b.addEventListener('click', () => setForce(+b.dataset.f)));
+  $('bNeedle').addEventListener('click', needleMove);
+  $('sensN').addEventListener('change', e => { N.sens = +e.target.value; drawNeedle(); });
+  $('sweepN').addEventListener('change', e => { N.sweep = +e.target.value; drawNeedle(); });
+  $('bSound').addEventListener('click', () => setSound(!N.sound));
+  $('vol').addEventListener('input', e => { N.vol = +e.target.value / 100; if (gainNode) gainNode.gain.value = N.vol; });
+  $('bPauseN').addEventListener('click', () => {
+    N.paused = !N.paused;
+    $('bPauseN').textContent = N.paused ? 'Devam et' : 'Durdur';
+    $('bPauseN').setAttribute('aria-pressed', String(N.paused));
+    if (N.paused && actx) actx.suspend(); else if (N.sound && actx) { actx.resume(); aBuf = []; aT0 = actx.currentTime + 0.05; aS0 = gen - LEAD; }
+    last = performance.now();
+  });
+
+  // =====================================================================
+  // NERVE CONDUCTION (median motor, recording APB)
+  // =====================================================================
+  const NFS = 20000, NWIN = 50; // Hz, ms
+  const DIST_WRIST = 70, DIST_ELBOW = 230; // mm
+  const COND = {
+    normal: { label: 'Normal', dl: 3.4, amp: 9.0, cv: 57, ampE: 8.6, disp: 1.0, dispE: 1.0, i50: 9 },
+    cts: { label: 'Karpal tünel', dl: 5.8, amp: 7.0, cv: 54, ampE: 6.7, disp: 1.1, dispE: 1.1, i50: 10 },
+    demyel: { label: 'Demiyelinizan', dl: 6.4, amp: 5.5, cv: 31, ampE: 3.3, disp: 1.3, dispE: 1.8, i50: 14 },
+    axonal: { label: 'Aksonal', dl: 3.8, amp: 2.1, cv: 49, ampE: 2.0, disp: 1.0, dispE: 1.05, i50: 9 },
+  };
+  const C = { cond: 'normal', site: 'wrist', cur: 10, sens: 5, sweep: 3, traces: { wrist: [], elbow: [] } };
+
+  function recordCmap(site, I) {
+    const P = COND[C.cond];
+    const elbow = site === 'elbow';
+    const lat = elbow ? P.dl + DIST_ELBOW / P.cv : P.dl;
+    const i50 = P.i50 + (elbow ? 4 : 0);
+    let frac = 1 / (1 + Math.exp(-(I - i50) / 1.8));
+    if (I < i50 - 7) frac = 0;
+    const A = (elbow ? P.ampE : P.amp) * frac;
+    const d1 = 5.5 * (elbow ? P.dispE : P.disp), d2 = 7 * (elbow ? P.dispE : P.disp);
+    const n = Math.round(NWIN * NFS / 1000), data = new Float32Array(n);
+    const art = I / 50;
+    for (let i = 0; i < n; i++) {
+      const t = i * 1000 / NFS;
+      let v = 0;
+      // stimulus artifact
+      v += art * (1.6 * gauss(t, 0.06, 0.03) - 1.0 * gauss(t, 0.16, 0.05)) + art * 0.25 * Math.exp(-t / 0.5) * (t > 0.1);
+      const tau = t - lat;
+      if (A > 0 && tau > -2) {
+        v += -A * gauss(tau, 0.45 * d1, 0.17 * d1);
+        v += 0.45 * A * gauss(tau, d1 + 0.35 * d2, 0.22 * d2);
+      }
+      v += randn() * 0.01;
+      data[i] = v;
+    }
+    return { data, I, frac, ...measureCmap(data) };
+  }
+  function measureCmap(data) {
+    const s0 = Math.round(1.5 * NFS / 1000);
+    let mn = 0, mi = -1;
+    for (let i = s0; i < data.length; i++) if (data[i] < mn) { mn = data[i]; mi = i; }
+    const amp = -mn;
+    if (amp < 0.15) return { amp: 0, lat: null, peakI: -1 };
+    const thr = -0.03 * amp;
+    let on = -1;
+    for (let i = s0; i < mi; i++) if (data[i] < thr && data[i + 1] < thr && data[i + 2] < thr) { on = i; break; }
+    return { amp, lat: on >= 0 ? on * 1000 / NFS : null, peakI: mi, onI: on };
+  }
+
+  const cvC = $('cvC');
+  let dC = null;
+  function sizeNcs() {
+    if ($('pNcs').hidden) return;
+    const narrow = cvC.parentElement.getBoundingClientRect().width < 520;
+    dC = fitCanvas(cvC, narrow ? 340 : 400);
+    drawNcs();
+  }
+  function drawNcs() {
+    if (!dC || $('pNcs').hidden) return;
+    const { ctx, w, h } = dC, c = colors();
+    ctx.fillStyle = c.surface; ctx.fillRect(0, 0, w, h);
+    const labelW = w < 520 ? 0 : 92;
+    const x0 = 12 + labelW, pw = w - x0 - 12;
+    const rows = [['wrist', 'Bilek'], ['elbow', 'Dirsek']];
+    const rowH = (h - 34) / 2;
+    const win = C.sweep * 10, n = Math.round(win * NFS / 1000);
+    rows.forEach(([key, name], r) => {
+      const y0 = 8 + r * rowH, hh = rowH - 10;
+      grid(ctx, x0, y0, pw, hh, 10, 4);
+      const base = y0 + hh * 0.7; // CMAP is mostly negative (drawn up), so the baseline sits low
+      const kV = (hh / 4) / C.sens;
+      ctx.fillStyle = c.ink; ctx.font = `600 13px ${c['font-mono']}`; ctx.textBaseline = 'alphabetic';
+      if (labelW) ctx.fillText(name, 12, y0 + 18); else ctx.fillText(name, x0 + 6, y0 + 16);
+      const list = C.traces[key];
+      if (labelW && list.length) { ctx.fillStyle = c.muted; ctx.font = `400 11px ${c['font-mono']}`; ctx.fillText(`${list[list.length - 1].I} mA`, 12, y0 + 36); }
+      list.forEach((tr, i) => {
+        const latest = i === list.length - 1;
+        ctx.strokeStyle = latest ? c.trace : c.faint; ctx.lineWidth = latest ? 1.6 : 1;
+        ctx.beginPath();
+        for (let k = 0; k < n; k++) {
+          const x = x0 + k / n * pw, y = base + clamp(tr.data[k] * kV,-base + y0 - 2, y0 + hh - base + 2);
+          k ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+        }
+        ctx.stroke();
+        if (latest && tr.lat !== null && tr.lat < win) {
+          const lx = x0 + tr.lat / win * pw;
+          ctx.strokeStyle = c.mark; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+          ctx.beginPath(); ctx.moveTo(lx, y0); ctx.lineTo(lx, y0 + hh); ctx.stroke(); ctx.setLineDash([]);
+          ctx.fillStyle = c.mark; ctx.font = `500 11px ${c['font-mono']}`;
+          ctx.fillText(`L ${fmt(tr.lat, 1)} ms`, Math.min(lx + 4, x0 + pw - 70), y0 + hh - 6);
+          if (tr.peakI < n) {
+            const px = x0 + tr.peakI / n * pw, py = base + clamp(tr.data[tr.peakI] * kV, -base + y0 - 2, 0);
+            ctx.beginPath(); ctx.arc(px, py, 3.5, 0, Math.PI * 2); ctx.fill();
+            ctx.fillText(`${fmt(tr.amp, 1)} mV`, Math.min(px + 7, x0 + pw - 60), Math.max(py + 4, y0 + 12));
+          }
+        }
+      });
+      if (!list.length) {
+        ctx.fillStyle = c.muted; ctx.font = `400 12px ${c['font-mono']}`;
+        ctx.fillText(key === 'wrist' ? 'Bilekten uyar' : 'Dirsekten uyar', x0 + pw / 2 - 45, base + hh * 0.3);
+      }
+    });
+    ctx.fillStyle = c.muted; ctx.font = `400 11px ${c['font-mono']}`;
+    ctx.fillText(`${C.sweep} ms/div · ${C.sens} mV/div`, x0, h - 10);
+  }
+
+  function ncsTable() {
+    const P = COND[C.cond];
+    const W = C.traces.wrist.at(-1), E = C.traces.elbow.at(-1);
+    const cell = (v, bad) => `<td class="num${bad ? ' bad' : ''}">${v}</td>`;
+    let rows = '';
+    if (W) {
+      rows += `<tr><td>Bilek</td>${cell(W.I + ' mA')}${cell(W.lat !== null ? fmt(W.lat, 1) + ' ms' : 'yanıt yok', W.lat !== null && W.lat > 4.4)}${cell(fmt(W.amp, 1) + ' mV', W.amp < 4)}${cell(DIST_WRIST + ' mm')}${cell('')}</tr>`;
+    } else rows += `<tr><td>Bilek</td>${cell('–')}${cell('–')}${cell('–')}${cell(DIST_WRIST + ' mm')}${cell('')}</tr>`;
+    let cv = '–', cvBad = false;
+    if (W && E && W.lat !== null && E.lat !== null && E.lat > W.lat) {
+      const v = DIST_ELBOW / (E.lat - W.lat); cv = fmt(v, 0) + ' m/s'; cvBad = v < 49;
+    }
+    if (E) {
+      rows += `<tr><td>Dirsek</td>${cell(E.I + ' mA')}${cell(E.lat !== null ? fmt(E.lat, 1) + ' ms' : 'yanıt yok')}${cell(fmt(E.amp, 1) + ' mV', E.amp < 4)}${cell(DIST_ELBOW + ' mm')}${cell(cv, cvBad)}</tr>`;
+    } else rows += `<tr><td>Dirsek</td>${cell('–')}${cell('–')}${cell('–')}${cell(DIST_ELBOW + ' mm')}${cell(cv)}</tr>`;
+    $('ncsTable').innerHTML = rows;
+  }
+  function stimulate() {
+    const tr = recordCmap(C.site, C.cur);
+    const list = C.traces[C.site];
+    // keep the previous few stimuli faintly, like the stacked traces on a real machine
+    list.push(tr); if (list.length > 4) list.shift();
+    const chip = $('supra');
+    if (tr.frac > 0.97) { chip.textContent = 'Supramaksimal'; chip.className = 'chip ok'; }
+    else if (tr.amp > 0) { chip.textContent = 'Submaksimal, akımı artır'; chip.className = 'chip warn'; }
+    else { chip.textContent = 'Yanıt yok, akımı artır'; chip.className = 'chip warn'; }
+    drawNcs(); ncsTable();
+  }
+
+  document.querySelectorAll('#ncsProfiles button').forEach(b => b.addEventListener('click', () => {
+    C.cond = b.dataset.c;
+    document.querySelectorAll('#ncsProfiles button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    C.traces = { wrist: [], elbow: [] };
+    $('supra').textContent = 'Henüz uyarı yok'; $('supra').className = 'chip warn';
+    drawNcs(); ncsTable();
+  }));
+  document.querySelectorAll('#sites button').forEach(b => b.addEventListener('click', () => {
+    C.site = b.dataset.s;
+    document.querySelectorAll('#sites button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  }));
+  $('cur').addEventListener('input', e => { C.cur = +e.target.value; $('curOut').textContent = C.cur + ' mA'; });
+  $('bStim').addEventListener('click', stimulate);
+  $('sensC').addEventListener('change', e => { C.sens = +e.target.value; drawNcs(); });
+  $('sweepC').addEventListener('change', e => { C.sweep = +e.target.value; drawNcs(); });
+  $('bClear').addEventListener('click', () => { C.traces = { wrist: [], elbow: [] }; drawNcs(); ncsTable(); });
+  document.addEventListener('keydown', e => {
+    if (e.code === 'Space' && !$('pNcs').hidden && !['INPUT', 'SELECT', 'BUTTON'].includes(document.activeElement.tagName)) { e.preventDefault(); stimulate(); }
+  });
+
+  // =====================================================================
+  // Tabs
+  // =====================================================================
+  function showTab(which) {
+    const needle = which === 'needle';
+    $('tabNeedle').setAttribute('aria-selected', String(needle));
+    $('tabNcs').setAttribute('aria-selected', String(!needle));
+    $('pNeedle').hidden = !needle; $('pNcs').hidden = needle;
+    if (!needle && N.sound) setSound(false);
+    if (needle) sizeNeedle(); else sizeNcs();
+  }
+  $('tabNeedle').addEventListener('click', () => showTab('needle'));
+  $('tabNcs').addEventListener('click', () => showTab('ncs'));
+
+  new ResizeObserver(() => { sizeNeedle(); sizeNcs(); }).observe(document.querySelector('.wrap'));
+  buildProfile();
+  generate(FS); // one second of history so the screen opens full
+  ncsTable();
+  showTab(location.hash === '#iletim' ? 'ncs' : 'needle');
+  statusNeedle();
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) { N.paused = true; $('bPauseN').textContent = 'Devam et'; $('bPauseN').setAttribute('aria-pressed', 'true'); }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
